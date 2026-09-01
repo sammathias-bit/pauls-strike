@@ -551,14 +551,27 @@ function buildMission(mi){
   /* compound flags */
   for(const a of anchors)M.props.push({kind:'flag',x:a.x+46,y:a.y-52,t:rng()*10});
   M.birds=[];
-  /* enemy airfield: runway cross, parked jets, hangar */
+  /* enemy airfield: long runway, taxiway, apron, hangar, parked jets */
   if(def.camp===0){
-    const af=place(520); M.airfield=af;
-    for(let i=0;i<3;i++){
-      const j=makeEnemy('jet',af.x-150+i*150,af.y+80,d.hp);
-      j.ang=-0.4; M.enemies.push(j);
+    const af={x:clamp(place(650).x,ocean+900,WORLD-750),y:clamp(250+rng()*(WORLD-500),700,WORLD-700)};
+    M.airfield=af;
+    /* clear the field: no trees, rocks, props or static guns on the tarmac */
+    M.trees=M.trees.filter(t=>Math.abs(t.y-af.y)>200||Math.abs(t.x-af.x)>780);
+    M.trees=M.trees.filter(t=>dist(t.x,t.y,af.x+240,af.y-260)>320);
+    M.rocks=M.rocks.filter(r=>Math.abs(r.y-af.y)>160||Math.abs(r.x-af.x)>760);
+    M.props=M.props.filter(p=>(Math.abs(p.y-af.y)>260&&dist(p.x,p.y,af.x+240,af.y-260)>340)||Math.abs(p.x-af.x)>820);
+    for(const e of M.enemies){
+      if(['radar','aa','sam','barracks','power','comm'].includes(e.type)){
+        if(Math.abs(e.y-af.y)<200&&Math.abs(e.x-af.x)<780){e.y+=e.y<af.y?-420:420;e.hy=e.y;e.hx=e.x;}
+      }
     }
-    M.bldgs.push({x:af.x-120,y:af.y-170,w:96,d:72,h:44,hp:90,dead:false,kind:'hangar',lit:0});
+    /* jets parked on the apron */
+    for(let i=0;i<3;i++){
+      const j=makeEnemy('jet',af.x+150+i*95,af.y-250,d.hp);
+      j.ang=-0.5; M.enemies.push(j);
+    }
+    M.bldgs.push({x:af.x+400,y:af.y-280,w:110,d:80,h:46,hp:90,dead:false,kind:'hangar',lit:0});
+    M.props.push({kind:'windsock',x:af.x-560,y:af.y-90,t:rng()*10});
   }
   /* landmark props: mesas, oil derricks, crashed aircraft */
   if(!city){
@@ -1373,42 +1386,82 @@ function cnv(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;
   g.fillStyle='#3c3c34'; g.fillRect(4,8,4,4); g.fillRect(14,8,4,4);
   SPRITES.radarV=c;
 })();
-/* pixel-art crew portraits, painted procedurally */
+/* portraits v2 — double-resolution, real facial structure, camo texture */
 function makePortrait(o){
-  const c=cnv(20,23),g=c.getContext('2d');
+  const c=cnv(40,46),g=c.getContext('2d');
   const px=(x,y,w,h,col)=>{g.fillStyle=col;g.fillRect(x,y,w,h);};
-  px(5,2,10,12,'#0e0c08');                       /* head outline */
-  px(6,3,8,10,o.skin);
-  px(6,11,8,1,o.skinD);
-  if(o.gray){px(6,3,1,4,'#b8b8b0');px(13,3,1,4,'#b8b8b0');}
-  if(o.aviators){px(6,6,8,2,'#14120e');px(9,6,1,1,'#3c3a36');}
-  else{px(7,6,2,1,'#141210');px(11,6,2,1,'#141210');}
-  px(9,8,2,1,o.skinD);                            /* nose */
-  if(o.stache)px(7,9,6,1,'#4a3826');
-  px(8,10,4,1,'#8a5c48');                         /* mouth */
+  const rnd=mulberry32((o.seed||7)*2749);
+  const skinHi=o.skinHi||'#e8c096';
+  /* head block + outline */
+  px(10,4,20,24,'#0e0c08');
+  px(11,5,18,22,o.skin);
+  /* cheek & jaw shading */
+  px(11,17,3,9,o.skinD); px(26,17,3,9,o.skinD);
+  px(13,24,14,3,o.skinD);
+  px(12,6,16,3,skinHi);                            /* forehead light */
+  /* ears */
+  px(9,14,2,6,o.skin); px(29,14,2,6,o.skin);
+  px(9,16,1,3,o.skinD); px(30,16,1,3,o.skinD);
+  /* hair under headgear */
+  px(11,5,18,3,o.hair||'#3a2c1c');
+  if(o.gray){px(11,6,2,6,'#b8b8b0');px(27,6,2,6,'#b8b8b0');}
+  /* brows */
+  px(13,12,5,1.5,o.hair||'#3a2c1c'); px(22,12,5,1.5,o.hair||'#3a2c1c');
+  /* eyes: whites + pupils, or aviators */
+  if(o.aviators){
+    px(12,13,16,4,'#14120e');
+    px(13,13,5,1,'#4a483f'); px(22,13,5,1,'#4a483f');
+    px(19,14,2,2,'#26241e');
+  } else {
+    px(13,14,5,2.5,'#f0ece2'); px(22,14,5,2.5,'#f0ece2');
+    px(15,14.5,2,2,'#2c2418'); px(24,14.5,2,2,'#2c2418');
+    px(13,14,5,0.8,o.skinD); px(22,14,5,0.8,o.skinD);
+  }
+  /* nose with side shade & nostrils */
+  px(19,15,2,6,o.skinD);
+  px(18,20,4,2,o.skinD);
+  px(18,21,1.4,1,'#8a6448'); px(20.6,21,1.4,1,'#8a6448');
+  if(o.stache)px(15,22.5,10,2,o.hair||'#4a3826');
+  /* lips */
+  px(16,24.5,8,1.4,'#a06a52'); px(16,25.9,8,1,'#7c4c3a');
+  /* headgear */
   if(o.hat==='helmet'){
-    px(4,1,12,4,'#0e0c08'); px(5,2,10,3,o.hatC); px(5,2,10,1,o.hatD);
-    px(3,5,3,5,'#0e0c08'); px(4,6,2,3,'#23281c'); /* ear cup */
-    px(4,9,6,1,'#23281c'); px(9,9,1,2,'#111');    /* boom mic */
+    px(8,1,24,8,'#0e0c08'); px(9,2,22,6,o.hatC); px(9,2,22,2,o.hatD);
+    for(let i=0;i<8;i++)px(10+rnd()*19,2.5+rnd()*4,2.5,1.5,'#3a4228');
+    px(6,10,4,10,'#0e0c08'); px(7,11,2,7,'#23281c');
+    px(7,18,10,2,'#23281c'); px(16,18,2,3,'#111');
   } else if(o.hat==='cap'){
-    px(4,1,12,3,'#0e0c08'); px(5,2,10,2,o.hatC);
-    px(12,3,6,2,'#0e0c08'); px(12,3,5,1,o.hatD);  /* brim */
+    px(8,1,24,6,'#0e0c08'); px(9,2,22,4,o.hatC); px(9,2,22,1.4,o.hatD);
+    px(24,5,13,3,'#0e0c08'); px(24,5,12,2,o.hatD);
   } else if(o.hat==='peaked'){
-    px(3,0,14,4,'#0e0c08'); px(4,1,12,3,o.hatC);
-    px(3,4,14,1,'#14120c'); px(9,1,2,2,'#e8c860'); /* badge */
-  } else {px(5,2,10,2,o.hatC);}
-  px(2,14,16,9,'#0e0c08');                        /* torso outline */
-  px(3,15,14,8,o.uni); px(3,15,14,2,o.uniD);
-  px(8,13,4,2,o.skin);                            /* neck */
-  if(o.ribbons){px(4,17,2,1,'#c04040');px(6,17,2,1,'#e8c860');px(4,18,2,1,'#4060c0');px(6,18,2,1,'#c8c8c8');}
-  if(o.zip){px(9,16,2,7,o.uniD);}
+    px(6,0,28,7,'#0e0c08'); px(7,1,26,5,o.hatC);
+    px(6,6,28,2,'#14120c'); px(17,1,6,4,'#e8c860'); px(18,2,4,2,'#a8842c');
+  }
+  /* neck with shade */
+  px(16,27,8,4,o.skin); px(16,27,8,1.5,o.skinD);
+  /* torso + collar */
+  px(4,30,32,16,'#0e0c08');
+  px(5,31,30,15,o.uni);
+  px(5,31,30,3,o.uniD);
+  px(13,31,6,4,o.uniD); px(21,31,6,4,o.uniD);    /* collar V */
+  px(16,31,8,3,o.skinD);
+  /* camo mottling */
+  for(let i=0;i<26;i++)px(6+rnd()*27,33+rnd()*11,2.5+rnd()*3,1.6+rnd()*2,o.uniD);
+  for(let i=0;i<14;i++)px(6+rnd()*27,33+rnd()*11,2+rnd()*2,1.4,o.uniHi||'#5e6c42');
+  /* pocket & zip */
+  if(o.zip)px(19,34,2,12,'#14120c');
+  px(7,37,7,5,o.uniD); px(7,37,7,1,'#14120c');
+  if(o.ribbons){
+    px(8,34,4,2,'#c04040'); px(13,34,4,2,'#e8c860');
+    px(8,37,4,2,'#4060c0'); px(13,37,4,2,'#c8c8c8');
+  }
   return c;
 }
 const PORTRAITS={
-  goose:  makePortrait({skin:'#d8a878',skinD:'#b8875c',hat:'helmet',hatC:'#4c5a30',hatD:'#5e6c3e',uni:'#4c5a30',uniD:'#3c481f',zip:true}),
-  hawk:   makePortrait({skin:'#c08858',skinD:'#a06c42',hat:'cap',hatC:'#2c3444',hatD:'#3a4458',uni:'#3a4458',uniD:'#2c3444',aviators:true}),
-  wrench: makePortrait({skin:'#e0b088',skinD:'#c08c60',hat:'cap',hatC:'#8a2c20',hatD:'#a8402e',uni:'#6a5a38',uniD:'#544628',stache:true,zip:true}),
-  colonel:makePortrait({skin:'#d8a878',skinD:'#b8875c',hat:'peaked',hatC:'#3a4228',hatD:'#4a5434',uni:'#4c5a30',uniD:'#3c481f',stache:true,gray:true,ribbons:true})
+  goose:  makePortrait({seed:11,skin:'#d8a878',skinD:'#bd8d60',skinHi:'#e6bc8e',hair:'#4a3520',hat:'helmet',hatC:'#4c5a30',hatD:'#5e6c3e',uni:'#4c5a30',uniD:'#3c481f',uniHi:'#5c6c3c',zip:true}),
+  hawk:   makePortrait({seed:23,skin:'#c08858',skinD:'#a06c42',skinHi:'#d09c6c',hair:'#1c1410',hat:'cap',hatC:'#2c3444',hatD:'#3a4458',uni:'#3a4458',uniD:'#2c3444',uniHi:'#48546c',aviators:true}),
+  wrench: makePortrait({seed:37,skin:'#e0b088',skinD:'#c08c60',skinHi:'#ecc49c',hair:'#6a3c20',hat:'cap',hatC:'#8a2c20',hatD:'#a8402e',uni:'#6a5a38',uniD:'#544628',uniHi:'#7c6c44',stache:true,zip:true}),
+  colonel:makePortrait({seed:53,skin:'#d8a878',skinD:'#bd8d60',skinHi:'#e6bc8e',hair:'#8a8a80',hat:'peaked',hatC:'#3a4228',hatD:'#4a5434',uni:'#4c5a30',uniD:'#3c481f',uniHi:'#5c6c3c',stache:true,gray:true,ribbons:true})
 };
 /* ¾ side-profile Apache — the view the game actually uses in flight */
 function makeSideApache(p){
@@ -1534,6 +1587,32 @@ function drawIsoBox(sx,sy,wx,wy,hw,hd,h,cTop,cL,cR){
   ditherPoly([c[1],c[2],t[2],t[1]],0.16);
   ditherPoly([c[3],c[2],t[2],t[3]],0.1);
   return {c,t};
+}
+/* extruded box at ANY rotation — true volume for vehicles */
+function drawRotBox(camX,camY,cx,cy,hw,hd,ang,zb,h,top,lit,dark){
+  const ca=Math.cos(ang),sa=Math.sin(ang);
+  const pts=[[-hw,-hd],[hw,-hd],[hw,hd],[-hw,hd]].map(([x,y])=>{
+    const q=P(cx+x*ca-y*sa,cy+x*sa+y*ca);
+    return{x:q.x-camX,y:q.y-camY-zb};
+  });
+  const t=pts.map(p=>({x:p.x,y:p.y-h}));
+  const order=[0,1,2,3].sort((i,j)=>
+    ((pts[i].y+pts[(i+1)%4].y)-(pts[j].y+pts[(j+1)%4].y)));
+  for(const i of order){
+    const j2=(i+1)%4;
+    const wn=ang+[-Math.PI/2,0,Math.PI/2,Math.PI][i];
+    const b=Math.cos(wn-(-2.4));
+    ctx.fillStyle=b>0.1?lit:dark;
+    ctx.beginPath();
+    ctx.moveTo(pts[i].x,pts[i].y); ctx.lineTo(pts[j2].x,pts[j2].y);
+    ctx.lineTo(t[j2].x,t[j2].y); ctx.lineTo(t[i].x,t[i].y);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.moveTo(t[0].x,t[0].y); ctx.lineTo(t[1].x,t[1].y);
+  ctx.lineTo(t[2].x,t[2].y); ctx.lineTo(t[3].x,t[3].y);
+  ctx.closePath(); ctx.fillStyle=top; ctx.fill();
+  return t;
 }
 function ditherPoly(pts,alpha){
   ctx.save(); ctx.beginPath();
@@ -1743,15 +1822,36 @@ function drawGroundPass(shX,shY){
     ctx.setLineDash([14,30]); ctx.lineDashOffset=-M.time*40;
     ctx.stroke(); ctx.setLineDash([]);
   }
-  /* enemy airfield runway cross */
+  /* enemy airfield: full runway with markings, taxiway, apron */
   if(M.airfield){
     const af=M.airfield;
-    ctx.fillStyle='#4a4640';
-    ctx.fillRect(af.x-45,af.y-330,90,660);
-    ctx.fillRect(af.x-330,af.y-45,660,90);
-    ctx.strokeStyle='rgba(230,225,210,0.5)'; ctx.lineWidth=3; ctx.setLineDash([26,22]);
-    ctx.beginPath(); ctx.moveTo(af.x,af.y-320); ctx.lineTo(af.x,af.y+320);
-    ctx.moveTo(af.x-320,af.y); ctx.lineTo(af.x+320,af.y); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='#45423c';
+    ctx.fillRect(af.x-700,af.y-52,1400,104);           /* main runway */
+    ctx.fillRect(af.x+130,af.y-260,44,260);            /* taxiway */
+    ctx.fillRect(af.x+60,af.y-330,480,150);            /* apron */
+    ctx.fillStyle='rgba(0,0,0,0.12)';
+    for(let x2=af.x-690;x2<af.x+700;x2+=46)ctx.fillRect(x2,af.y-52,20,104); /* tarmac slabs */
+    ctx.strokeStyle='rgba(235,230,215,0.6)'; ctx.lineWidth=3;
+    ctx.setLineDash([30,26]);
+    ctx.beginPath(); ctx.moveTo(af.x-660,af.y); ctx.lineTo(af.x+660,af.y); ctx.stroke();
+    ctx.setLineDash([]);
+    /* threshold piano keys + numbers */
+    ctx.fillStyle='rgba(235,230,215,0.75)';
+    for(let k=0;k<7;k++){
+      ctx.fillRect(af.x-688,af.y-44+k*13,34,7);
+      ctx.fillRect(af.x+654,af.y-44+k*13,34,7);
+    }
+    ctx.font='bold 34px Consolas'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='rgba(235,230,215,0.7)';
+    ctx.fillText('09',af.x-590,af.y); ctx.fillText('27',af.x+590,af.y);
+    ctx.textBaseline='top';
+    /* taxi line + apron tie-downs */
+    ctx.strokeStyle='rgba(220,190,80,0.55)'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(af.x+152,af.y-6); ctx.lineTo(af.x+152,af.y-250); ctx.stroke();
+    ctx.strokeStyle='rgba(235,230,215,0.35)'; ctx.lineWidth=2;
+    for(let i=0;i<3;i++)ctx.strokeRect(af.x+110+i*95,af.y-300,80,100);
+    ctx.strokeStyle='#33302a'; ctx.lineWidth=4;
+    ctx.strokeRect(af.x-700,af.y-52,1400,104);
   }
   for(const c of M.craters){
     if(!vis(c.x,c.y,60))continue;
@@ -1812,7 +1912,21 @@ function drawGroundPass(shX,shY){
       ctx.fillStyle='rgba(220,240,255,'+(0.4-i*0.045)+')';
       ctx.fillRect(-24+((i*37)%20),wy2,10-i,3);
     }
-    /* hull with deck plating */
+    /* hull sides: the ship rises out of the water */
+    ctx.fillStyle='#3e444d';
+    ctx.beginPath();
+    ctx.moveTo(0,-252); ctx.lineTo(30,-192); ctx.lineTo(44,-106); ctx.lineTo(48,124);
+    ctx.lineTo(34,182); ctx.lineTo(-34,182); ctx.lineTo(-48,124); ctx.lineTo(-44,-106);
+    ctx.lineTo(-30,-192); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#2c3138';
+    ctx.beginPath();
+    ctx.moveTo(-34,182); ctx.lineTo(34,182); ctx.lineTo(34,170); ctx.lineTo(-34,170);
+    ctx.closePath(); ctx.fill();
+    /* boot stripe at the waterline */
+    ctx.strokeStyle='#8a2c20'; ctx.lineWidth=3;
+    ctx.beginPath();
+    ctx.moveTo(-46,120); ctx.lineTo(-33,178); ctx.moveTo(46,120); ctx.lineTo(33,178);
+    ctx.stroke();
     ctx.fillStyle='#22252c';
     ctx.beginPath();
     ctx.moveTo(0,-268); ctx.lineTo(30,-206); ctx.lineTo(44,-120); ctx.lineTo(48,110);
@@ -1882,26 +1996,11 @@ function drawGroundPass(shX,shY){
         break; /* drawn as upright sprites */
       case 'jet':
         ctx.rotate(e.ang);
-        ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(3,4,20,8,0,0,TAU); ctx.fill();
-        ctx.fillStyle='#c8ccd2'; ctx.fillRect(-20,-3,40,6);
-        ctx.beginPath(); ctx.moveTo(20,-3); ctx.lineTo(27,0); ctx.lineTo(20,3); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(2,-2); ctx.lineTo(-12,-17); ctx.lineTo(-5,-17); ctx.lineTo(7,-2); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(2,2); ctx.lineTo(-12,17); ctx.lineTo(-5,17); ctx.lineTo(7,2); ctx.closePath(); ctx.fill();
-        ctx.fillStyle='#9aa0a8';
-        ctx.beginPath(); ctx.moveTo(-16,-2); ctx.lineTo(-23,-9); ctx.lineTo(-18,-9); ctx.lineTo(-13,-2); ctx.closePath(); ctx.fill();
-        ctx.fillStyle='#6d747e'; ctx.fillRect(-20,-1.5,5,3);
-        ctx.fillStyle='#4a5058'; ctx.fillRect(8,-2,6,4);
+        ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(3,4,24,11,0,0,TAU); ctx.fill();
         break;
       case 'truck':
         ctx.rotate(e.ang);
-        ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(3,4,16,8,0,0,TAU); ctx.fill();
-        ctx.fillStyle='#0c0c0a';
-        ctx.fillRect(-13,-10,5,3); ctx.fillRect(-2,-10,5,3); ctx.fillRect(9,-10,5,3);
-        ctx.fillRect(-13,7,5,3); ctx.fillRect(-2,7,5,3); ctx.fillRect(9,7,5,3);
-        ctx.fillStyle='#14120c'; ctx.fillRect(-16,-8,32,16);
-        ctx.fillStyle='#4c5438'; ctx.fillRect(-15,-7,22,14);
-        ctx.fillStyle='#5e684a'; ctx.fillRect(-15,-7,22,4);
-        ctx.fillStyle='#3c4430'; ctx.fillRect(7,-7,8,14);
+        ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(3,4,17,8,0,0,TAU); ctx.fill();
         break;
       case 'power':
         ctx.fillStyle='#55524a'; ctx.fillRect(-30,-24,60,48);
@@ -2064,7 +2163,17 @@ function drawUprightPass(shX,shY){
     if(pr.kind==='wreck'||!vis(pr.x,pr.y))continue;
     const s=S(pr.x,pr.y);
     items.push({sy:s.y,draw(){
-      if(pr.kind==='flag'){
+      if(pr.kind==='windsock'){
+        ctx.strokeStyle='#c8cdd4'; ctx.lineWidth=2.5;
+        ctx.beginPath(); ctx.moveTo(s.x,s.y); ctx.lineTo(s.x,s.y-38); ctx.stroke();
+        const wv=Math.sin(M.time*2.2+pr.t)*4;
+        ctx.fillStyle='#e07820';
+        ctx.beginPath();
+        ctx.moveTo(s.x,s.y-38); ctx.lineTo(s.x+22,s.y-35+wv); ctx.lineTo(s.x+22,s.y-31+wv); ctx.lineTo(s.x,s.y-30);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle='#e8e4d8';
+        ctx.fillRect(s.x+7,s.y-37+wv*0.35,5,7);
+      } else if(pr.kind==='flag'){
         ctx.strokeStyle='#3a342a'; ctx.lineWidth=2;
         ctx.beginPath(); ctx.moveTo(s.x,s.y); ctx.lineTo(s.x,s.y-34); ctx.stroke();
         const wv=Math.sin(M.time*4+pr.t)*3;
@@ -2173,25 +2282,59 @@ function drawUprightPass(shX,shY){
     items.push({sy:s.y,draw(){
       switch(e.type){
         case 'tank':{
-          drawVehSprite('tankV',s.x,s.y-4,worldAngToScreen(e.ang));
-          const ba=worldAngToScreen(e.turAng);
-          ctx.strokeStyle='#14100a'; ctx.lineWidth=5;
-          ctx.beginPath(); ctx.moveTo(s.x,s.y-9);
-          ctx.lineTo(s.x+Math.cos(ba)*26,s.y-9+Math.sin(ba)*26*0.85); ctx.stroke();
-          ctx.strokeStyle='#4c4028'; ctx.lineWidth=2.5;
-          ctx.beginPath(); ctx.moveTo(s.x,s.y-9);
-          ctx.lineTo(s.x+Math.cos(ba)*24,s.y-9+Math.sin(ba)*24*0.85); ctx.stroke();
-          ctx.fillStyle='#14100a'; ctx.beginPath(); ctx.arc(s.x,s.y-9,7,0,TAU); ctx.fill();
-          ctx.fillStyle='#6a5a36'; ctx.beginPath(); ctx.arc(s.x-1,s.y-10,5,0,TAU); ctx.fill();
+          const a=e.ang,ca2=Math.cos(a),sa2=Math.sin(a);
+          for(const oy of[-8,8]){ /* tracks */
+            drawRotBox(camX,camY,e.x-sa2*oy,e.y+ca2*oy,17,3.5,a,0,5,'#2a2618','#38321f','#1a160e');
+          }
+          drawRotBox(camX,camY,e.x,e.y,15,8,a,4,7,'#6a6236','#746c3e','#463e22'); /* hull */
+          drawRotBox(camX,camY,e.x+ca2*6,e.y+sa2*6,4,7,a,11,2,'#5a5230','#645c34','#3e3820'); /* glacis */
+          const ta=e.turAng,tc=Math.cos(ta),ts=Math.sin(ta);
+          drawRotBox(camX,camY,e.x-tc*2,e.y-ts*2,7,6,ta,11,6,'#5e5632','#6a6238','#423a20'); /* turret */
+          drawRotBox(camX,camY,e.x+tc*15,e.y+ts*15,11,1.2,ta,14,2,'#2e2a1c','#38321f','#201c12'); /* barrel */
+          drawRotBox(camX,camY,e.x-tc*4,e.y-ts*4,2.5,2.5,ta,17,2,'#4e4628','#5a5230','#38321c'); /* hatch */
           break;}
         case 'aa':{
-          drawVehSprite('aaV',s.x,s.y-6,worldAngToScreen(e.turAng));
+          drawRotBox(camX,camY,e.x,e.y,10,10,0,0,6,'#565640','#62624a','#3c3c2c'); /* base */
+          const ta=e.turAng,tc=Math.cos(ta),ts=Math.sin(ta);
+          drawRotBox(camX,camY,e.x,e.y,6,5,ta,6,5,'#6a6a50','#76765a','#484834'); /* cradle */
+          for(const oy of[-2.6,2.6]){
+            drawRotBox(camX,camY,e.x+tc*11-ts*oy,e.y+ts*11+tc*oy,9,0.9,ta,10,1.6,'#26261e','#303026','#181812');
+          }
           break;}
-        case 'sam':{
-          drawVehSprite('samV',s.x,s.y-6,worldAngToScreen(e.ang));
+        case 'sam': case 'mob':{
+          const a=e.ang,ca2=Math.cos(a),sa2=Math.sin(a);
+          for(const[ox,oy]of[[-9,-7],[0,-7],[9,-7],[-9,7],[0,7],[9,7]]){ /* wheels */
+            drawRotBox(camX,camY,e.x+ca2*ox-sa2*oy,e.y+sa2*ox+ca2*oy,2.5,1.6,a,0,4,'#111','#1c1c1c','#0a0a0a');
+          }
+          drawRotBox(camX,camY,e.x,e.y,14,7,a,3,5,'#4c4c58','#565664','#34343e'); /* chassis */
+          drawRotBox(camX,camY,e.x+ca2*10,e.y+sa2*10,4.5,6.5,a,8,7,e.type==='mob'?'#6a2020':'#565664','#78303O'.replace('O','0'),'#3c1616'); /* cab */
+          drawRotBox(camX,camY,e.x-ca2*4,e.y-sa2*4,9,6,a,8,3,'#3e3e48','#484852','#2c2c34'); /* rail bed */
+          for(const oy of[-3,3]){
+            drawRotBox(camX,camY,e.x-ca2*3-sa2*oy,e.y-sa2*3+ca2*oy,8,1.2,a,11,2,'#d8dade','#e6e8ec','#a8aab0'); /* missiles */
+            drawRotBox(camX,camY,e.x+ca2*5.5-sa2*oy,e.y+sa2*5.5+ca2*oy,1.2,1.2,a,11,2,'#b02424','#c03030','#801818');
+          }
           break;}
-        case 'mob':{
-          drawVehSprite('samV',s.x,s.y-6,worldAngToScreen(e.ang));
+        case 'truck':{
+          const a=e.ang,ca2=Math.cos(a),sa2=Math.sin(a);
+          for(const[ox,oy]of[[-8,-6.5],[3,-6.5],[10,-6.5],[-8,6.5],[3,6.5],[10,6.5]]){
+            drawRotBox(camX,camY,e.x+ca2*ox-sa2*oy,e.y+sa2*ox+ca2*oy,2.4,1.6,a,0,4,'#111','#1c1c1c','#0a0a0a');
+          }
+          drawRotBox(camX,camY,e.x,e.y,15,6.5,a,3,4,'#46503a','#525c44','#303826'); /* chassis */
+          drawRotBox(camX,camY,e.x-ca2*4,e.y-sa2*4,10,6.5,a,7,7,'#5a6446','#68724f','#3e4630'); /* canvas bed */
+          drawRotBox(camX,camY,e.x+ca2*11,e.y+sa2*11,4,6,a,7,7,'#4c5640','#5a6448','#343c2a'); /* cab */
+          drawRotBox(camX,camY,e.x+ca2*13.5,e.y+sa2*13.5,1.2,5,a,10,3,'#9fc4d4','#b8d8e4','#6a8a98'); /* windshield */
+          break;}
+        case 'jet':{
+          const a=e.ang,ca2=Math.cos(a),sa2=Math.sin(a);
+          for(const wa of[a-2.6,a+2.6]){ /* swept wings */
+            const wc=Math.cos((wa+a)/2),ws=Math.sin((wa+a)/2);
+            drawRotBox(camX,camY,e.x-ca2*2-Math.sin(wa)*0,e.y-sa2*2,12,2.6,wa,2,1.6,'#c2c6cc','#d2d6dc','#94989e');
+          }
+          drawRotBox(camX,camY,e.x-ca2*17,e.y-sa2*17,6,1.8,a-2.6,2,1.4,'#aeb2b8','#bec2c8','#84888e'); /* tailplane */
+          drawRotBox(camX,camY,e.x,e.y,21,3,a,1,5,'#c8ccd2','#d8dce2','#9a9ea4'); /* fuselage */
+          drawRotBox(camX,camY,e.x+ca2*23,e.y+sa2*23,3.5,2,a,2,3.5,'#aeb2b8','#bec2c8','#84888e'); /* nose */
+          drawRotBox(camX,camY,e.x+ca2*8,e.y+sa2*8,4,1.8,a,6,2.5,'#7ab0c4','#9accdc','#588a9c'); /* canopy */
+          drawRotBox(camX,camY,e.x-ca2*19,e.y-sa2*19,4.5,0.9,a,3,9,'#b8bcc2','#c8ccd2','#8e9298'); /* tail fin */
           break;}
         case 'radar':{
           drawVehSprite('radarV',s.x,s.y-6,0);
@@ -2205,11 +2348,17 @@ function drawUprightPass(shX,shY){
           ctx.restore();
           break;}
         case 'rpg':{
+          const step=Math.sin(e.t*6)*2;
+          ctx.fillStyle='#2e2a1e';
+          ctx.fillRect(s.x-3,s.y-4,2.5,4+step); ctx.fillRect(s.x+1,s.y-4,2.5,4-step); /* legs */
+          ctx.fillStyle='#5a3325'; ctx.fillRect(s.x-3.5,s.y-10,7,7);   /* tunic */
           ctx.fillStyle='#c9a06a';
-          ctx.beginPath(); ctx.arc(s.x,s.y-11,3.5,0,TAU); ctx.fill();
-          ctx.fillStyle='#5a3325'; ctx.fillRect(s.x-3,s.y-8,6,8);
-          ctx.strokeStyle='#333'; ctx.lineWidth=2;
-          ctx.beginPath(); ctx.moveTo(s.x-5,s.y-9); ctx.lineTo(s.x+6,s.y-13); ctx.stroke();
+          ctx.beginPath(); ctx.arc(s.x,s.y-12.5,3.2,0,TAU); ctx.fill();
+          ctx.fillStyle='#3e3a2a';
+          ctx.beginPath(); ctx.arc(s.x,s.y-13.5,3.4,Math.PI,0); ctx.fill(); /* helmet */
+          ctx.strokeStyle='#333'; ctx.lineWidth=2.2;
+          ctx.beginPath(); ctx.moveTo(s.x-6,s.y-9); ctx.lineTo(s.x+7,s.y-14); ctx.stroke(); /* launcher */
+          ctx.fillStyle='#6a5c3a'; ctx.fillRect(s.x+5,s.y-16,3,3);
           break;}
         case 'barracks':{
           drawIsoBox(camX,camY,e.x,e.y,26,20,18,'#5c6648','#434c32','#38402a');
@@ -2288,10 +2437,15 @@ function drawUprightPass(shX,shY){
         ctx.fillStyle='#7a7068'; ctx.fillRect(s.x-7,s.y-3,14,4);
         return;
       }
+      const cstep=Math.sin(cv2.t*5)*1.8;
+      ctx.fillStyle='#3a4a6a';
+      ctx.fillRect(s.x-2.8,s.y-4,2.4,4+cstep); ctx.fillRect(s.x+0.6,s.y-4,2.4,4-cstep);
+      ctx.fillStyle='#dde4ea'; ctx.fillRect(s.x-3.2,s.y-10.5,6.4,7);
+      ctx.fillStyle='#c8cdd8'; ctx.fillRect(s.x-3.2,s.y-10.5,2.4,7);
       ctx.fillStyle='#d8b088';
-      ctx.beginPath(); ctx.arc(s.x,s.y-13,3.5,0,TAU); ctx.fill();
-      ctx.fillStyle='#dde4ea'; ctx.fillRect(s.x-3,s.y-10,6,7);
-      ctx.fillStyle='#3a4a6a'; ctx.fillRect(s.x-3,s.y-3,6,3);
+      ctx.beginPath(); ctx.arc(s.x,s.y-13,3.2,0,TAU); ctx.fill();
+      ctx.fillStyle='#2c2418';
+      ctx.beginPath(); ctx.arc(s.x,s.y-14,3.2,Math.PI,0); ctx.fill();
     }});
   }
   for(const p of M.pows){
@@ -2932,9 +3086,13 @@ function drawBriefRoom(def){
   ctx.fillStyle='#14120c'; ctx.fillRect(ix-17,iy+98,36,5);
   ctx.fillStyle='#8a6a1c'; ctx.fillRect(ix-3,iy+98,7,5);
   ctx.fillStyle='#d8a878'; ctx.fillRect(ix-8,iy-2,18,26);
-  ctx.fillStyle='#141210'; ctx.fillRect(ix-4,iy+7,3,2); ctx.fillRect(ix+3,iy+7,3,2);
-  ctx.fillStyle='#b8875c'; ctx.fillRect(ix-2,iy+12,5,2);
-  ctx.fillStyle='#4a3826'; ctx.fillRect(ix-5,iy+17,11,2);
+  ctx.fillStyle='#bd8d60'; ctx.fillRect(ix-8,iy+16,18,4); /* jaw shade */
+  ctx.fillStyle='#f0ece2'; ctx.fillRect(ix-5,iy+6,4,3); ctx.fillRect(ix+3,iy+6,4,3);
+  ctx.fillStyle='#2c2418'; ctx.fillRect(ix-4,iy+7,2,2); ctx.fillRect(ix+4,iy+7,2,2);
+  ctx.fillStyle='#4a3520'; ctx.fillRect(ix-5,iy+4,4,1.5); ctx.fillRect(ix+3,iy+4,4,1.5); /* brows */
+  ctx.fillStyle='#bd8d60'; ctx.fillRect(ix-1,iy+8,3,5);   /* nose */
+  ctx.fillStyle='#4a3826'; ctx.fillRect(ix-5,iy+17,11,2); /* mustache */
+  ctx.fillStyle='#a06a52'; ctx.fillRect(ix-4,iy+20,9,1.5);
   ctx.fillStyle='#4c4a34'; ctx.fillRect(ix-11,iy-10,24,11);
   ctx.fillStyle='#3a3c28'; ctx.fillRect(ix-14,iy-2,10,4);
   /* arm raised to the board with pointer */
