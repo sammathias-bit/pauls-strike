@@ -305,6 +305,8 @@ function pollInput(){
     input.cycle=jp('KeyQ')||jp('Tab')||gjp[2]||gjp[5];
   }
   input.winch=jp('KeyE')||gjp[1]||gjp[6];
+  input.resupply=jp('KeyR')||gjp[3];
+  input.strafe=!!(keys.ShiftLeft||gbtn[4]);
   input.pause=jp('KeyP')||jp('Escape')||gjp[9];
   input.up=jp('ArrowUp')||jp('KeyW')||gjp[12]||false;
   input.down=jp('ArrowDown')||jp('KeyS')||gjp[13]||false;
@@ -546,6 +548,9 @@ function buildMission(mi){
       }
     }
   }
+  /* compound flags */
+  for(const a of anchors)M.props.push({kind:'flag',x:a.x+46,y:a.y-52,t:rng()*10});
+  M.birds=[];
   /* enemy airfield: runway cross, parked jets, hangar */
   if(def.camp===0){
     const af=place(520); M.airfield=af;
@@ -688,7 +693,12 @@ function fireWeapon(){
 }
 function enemyShoot(e,kind){
   const ch=M.ch,d=DIFF[G.diff];
-  const a=Math.atan2(ch.y-e.y,ch.x-e.x);
+  /* gunners lead the target, but fast movers are hard to hit — hovering is dangerous */
+  const chSp=Math.hypot(ch.vx,ch.vy);
+  const projSp=kind==='shell'?240:(kind==='bullet'?460:200);
+  const tLead=dist(e.x,e.y,ch.x,ch.y)/projSp*0.6;
+  let a=Math.atan2(ch.y+ch.vy*tLead-e.y,ch.x+ch.vx*tLead-e.x);
+  if(kind!=='missile')a+=(Math.random()*2-1)*(chSp/270)*0.34;
   if(kind==='shell'){
     M.projectiles.push({x:e.x,y:e.y,vx:Math.cos(a)*240,vy:Math.sin(a)*240,dmg:10*d.dmg,from:'enemy',kind:'shell',life:3,z:20});
     sfx('clank');
@@ -762,7 +772,18 @@ function killEnemy(e){
     M.powerDown=true;
     say("Power station is down! Their searchlights just went dark, Paul. The night is yours.");
   }
-  if(e.type==='radar')objCredit('radar');
+  if(e.type==='radar'){
+    objCredit('radar');
+    /* losing radar makes them scramble a patrol bird */
+    M.scrambled=(M.scrambled||0);
+    if(M.scrambled<2&&Math.random()<0.6){
+      M.scrambled++;
+      const edge=Math.random()<0.5?{x:WORLD-100,y:Math.random()*WORLD}:{x:Math.random()*WORLD,y:WORLD-100};
+      const h2=makeEnemy('heli',edge.x,edge.y,DIFF[G.diff].hp); h2.z=52;
+      M.enemies.push(h2);
+      say("They scrambled a patrol bird off that radar site — eyes up, Paul!");
+    }
+  }
   if(e.type==='aa')objCredit('aa');
   if(e.type==='tank')objCredit('tank');
   if(e.type==='sam'||e.type==='mob')objCredit('sam');
@@ -785,7 +806,7 @@ function updateChopper(dt){
   if(mag>0.05){
     const wd=screenDirToWorld(input.mx,input.my);
     const na=Math.atan2(wd.y,wd.x);
-    ch.heading=angLerp(ch.heading,na,clamp(6*dt,0,1));
+    if(!input.strafe)ch.heading=angLerp(ch.heading,na,clamp(6*dt,0,1)); /* SHIFT: strafe lock — nose stays on target */
     ch.vx+=wd.x*560*Math.min(1,mag)*dt;
     ch.vy+=wd.y*560*Math.min(1,mag)*dt;
   }
@@ -816,6 +837,51 @@ function updateChopper(dt){
   if(input.w1)ch.weapon=0; if(input.w2)ch.weapon=1; if(input.w3)ch.weapon=2;
   ch.cd-=dt;
   if(input.fire)fireWeapon();
+  /* frigate resupply drop — once per mission on R */
+  if(input.resupply){
+    if(M.dropUsed)say("Resupply's already spent, Paul. One drop per sortie.");
+    else{
+      M.dropUsed=true;
+      M.drop={x:ch.x,y:ch.y,z:340};
+      say("Copy that — resupply inbound from the frigate. Watch for the chute.");
+    }
+  }
+  if(M.drop){
+    M.drop.z-=85*dt;
+    if(M.drop.z<=0){
+      M.pickups.push({type:'ammo',x:M.drop.x,y:M.drop.y});
+      M.pickups.push({type:'fuel',x:M.drop.x+34,y:M.drop.y+10});
+      explosion(M.drop.x,M.drop.y,false,2);
+      say("Supply crate is down. Grab it and get back in the fight.");
+      M.drop=null;
+    }
+  }
+  /* rotor wash — the ground reacts beneath you */
+  M.washT=(M.washT||0)-dt;
+  if(M.washT<=0){
+    M.washT=0.07;
+    const overWater=M.ocean&&ch.x<M.ocean;
+    for(let k=0;k<2;k++){
+      const a2=Math.random()*TAU,r2=20+Math.random()*10;
+      M.effects.push({x:ch.x+Math.cos(a2)*r2,y:ch.y+Math.sin(a2)*r2,z:2,
+        vx:Math.cos(a2)*70,vy:Math.sin(a2)*70,vz:2,
+        life:0.45,max:0.5,size:overWater?2.5:3,
+        color:overWater?'rgba(225,240,250,0.5)':(M.camp===1?'rgba(90,110,60,0.35)':(M.camp===2?'rgba(120,120,130,0.3)':'rgba(200,175,120,0.4)')),smoke:true});
+    }
+  }
+  /* battle damage: your bird smokes when she's hurt */
+  if(ch.armor<50){
+    M.dmgT=(M.dmgT||0)-dt;
+    if(M.dmgT<=0){
+      M.dmgT=ch.armor<25?0.1:0.25;
+      M.effects.push({x:ch.x-Math.cos(ch.heading)*14,y:ch.y-Math.sin(ch.heading)*14,z:56,
+        vx:-ch.vx*0.2,vy:-ch.vy*0.2,vz:26,
+        life:0.9,max:1,size:3.5,color:ch.armor<25?'rgba(40,40,40,0.6)':'rgba(110,110,110,0.45)',smoke:true});
+      if(ch.armor<25&&Math.random()<0.3)
+        M.effects.push({x:ch.x,y:ch.y,z:54,vx:(Math.random()*2-1)*40,vy:(Math.random()*2-1)*40,vz:10,
+          life:0.15,max:0.15,size:3,color:'#ffe98a'});
+    }
+  }
   const overPad=dist(ch.x,ch.y,M.pad.x,M.pad.y)<75;
   if(overPad&&sp<120){
     const rep=cf.repair||1;
@@ -1168,6 +1234,28 @@ function updateGame(dt){
     cv2.x+=Math.cos(cv2.t*0.5)*9*dt; cv2.y+=Math.sin(cv2.t*0.4)*9*dt;
   }
   if(M.rescue)M.rescue.t+=dt;
+  /* birds flush from trees as you pass low */
+  if(M.ch.alive){
+    M.birdT=(M.birdT||0)-dt;
+    if(M.birdT<=0){
+      M.birdT=0.4;
+      for(const t2 of M.trees){
+        if(t2.flushed)continue;
+        if(Math.abs(t2.x-M.ch.x)<150&&Math.abs(t2.y-M.ch.y)<150){
+          t2.flushed=true;
+          for(let k=0;k<3;k++){
+            const a2=Math.random()*TAU;
+            M.birds.push({x:t2.x,y:t2.y,z:16,vx:Math.cos(a2)*90,vy:Math.sin(a2)*90,vz:34,t:0,f:Math.random()*6});
+          }
+          break;
+        }
+      }
+    }
+  }
+  for(const b2 of M.birds){
+    b2.t+=dt; b2.x+=b2.vx*dt; b2.y+=b2.vy*dt; b2.z+=b2.vz*dt; b2.vz*=0.99;
+  }
+  M.birds=M.birds.filter(b2=>b2.t<2.4);
   if(M.ch.alive){
     updateChopper(dt);
   } else {
@@ -1976,7 +2064,15 @@ function drawUprightPass(shX,shY){
     if(pr.kind==='wreck'||!vis(pr.x,pr.y))continue;
     const s=S(pr.x,pr.y);
     items.push({sy:s.y,draw(){
-      if(pr.kind==='mesa'){
+      if(pr.kind==='flag'){
+        ctx.strokeStyle='#3a342a'; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.moveTo(s.x,s.y); ctx.lineTo(s.x,s.y-34); ctx.stroke();
+        const wv=Math.sin(M.time*4+pr.t)*3;
+        ctx.fillStyle='#a82c20';
+        ctx.beginPath();
+        ctx.moveTo(s.x,s.y-34); ctx.lineTo(s.x+16,s.y-31+wv); ctx.lineTo(s.x,s.y-26);
+        ctx.closePath(); ctx.fill();
+      } else if(pr.kind==='mesa'){
         drawIsoBox(camX,camY,pr.x,pr.y,pr.w*0.5,pr.d*0.5,pr.h,
           M.camp===1?'#3a5a2c':'#c2a066',M.camp===1?'#2a4220':'#8a7048',M.camp===1?'#223618':'#6d5a3a');
       } else {
@@ -2016,15 +2112,15 @@ function drawUprightPass(shX,shY){
         ctx.beginPath(); ctx.arc(s.x,s.y-t.r-6,t.r,0,TAU); ctx.fill();
         ctx.fillStyle='rgba(90,140,60,0.5)';
         ctx.beginPath(); ctx.arc(s.x-t.r*0.3,s.y-t.r-6-t.r*0.3,t.r*0.5,0,TAU); ctx.fill();
-      } else if(t.g<0.45){ /* palm */
-        const h2=t.r*2.2;
+      } else if(t.g<0.45){ /* palm, swaying */
+        const h2=t.r*2.2,sw=Math.sin(M.time*1.4+t.x*0.05)*2.5;
         ctx.fillStyle='#6a4c2a'; ctx.fillRect(s.x-1.5,s.y-h2,3,h2);
         ctx.strokeStyle='#3f6a26'; ctx.lineWidth=2.5;
         for(let fr=0;fr<5;fr++){
           const fa=-Math.PI/2+(fr-2)*0.55;
           ctx.beginPath(); ctx.moveTo(s.x,s.y-h2);
-          ctx.quadraticCurveTo(s.x+Math.cos(fa)*t.r*1.2,s.y-h2+Math.sin(fa)*t.r*0.9-4,
-            s.x+Math.cos(fa)*t.r*1.7,s.y-h2+Math.sin(fa)*t.r*1.1+3);
+          ctx.quadraticCurveTo(s.x+Math.cos(fa)*t.r*1.2+sw,s.y-h2+Math.sin(fa)*t.r*0.9-4,
+            s.x+Math.cos(fa)*t.r*1.7+sw*1.6,s.y-h2+Math.sin(fa)*t.r*1.1+3);
           ctx.stroke();
         }
       } else { /* cactus */
@@ -2300,8 +2396,36 @@ function drawUprightPass(shX,shY){
     }
     drawChopperSprite(bx,by2,dx>1?0:(t<1.6?0:0),0,M.time*24,0.9);
   }
+  /* falling resupply crate under its chute */
+  if(M.drop){
+    const s=S(M.drop.x,M.drop.y);
+    items.push({sy:s.y,draw(){
+      const dz=M.drop.z;
+      ctx.fillStyle='rgba(0,0,0,0.2)';
+      ctx.beginPath(); ctx.ellipse(s.x,s.y,10,5,0,0,TAU); ctx.fill();
+      ctx.fillStyle='#7a6a3a'; ctx.fillRect(s.x-8,s.y-dz-6,16,12);
+      ctx.strokeStyle='#d8d8cc'; ctx.lineWidth=1.5;
+      ctx.beginPath();
+      ctx.moveTo(s.x-8,s.y-dz-6); ctx.lineTo(s.x-14,s.y-dz-30);
+      ctx.moveTo(s.x+8,s.y-dz-6); ctx.lineTo(s.x+14,s.y-dz-30);
+      ctx.stroke();
+      ctx.fillStyle='#e8e4d8';
+      ctx.beginPath(); ctx.arc(s.x,s.y-dz-34,16,Math.PI,0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#a82c20';
+      ctx.beginPath(); ctx.arc(s.x,s.y-dz-34,16,Math.PI*1.25,Math.PI*1.55); ctx.lineTo(s.x,s.y-dz-34); ctx.closePath(); ctx.fill();
+    }});
+  }
   items.sort((a,b)=>a.sy-b.sy);
   for(const it of items)it.draw();
+  /* flushed birds */
+  for(const b2 of M.birds){
+    const s=S(b2.x,b2.y);
+    const flap=Math.sin(b2.t*18+b2.f)*3;
+    ctx.strokeStyle='rgba(30,28,24,'+clamp(1.2-b2.t*0.5,0,1)+')'; ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.moveTo(s.x-4,s.y-b2.z-flap); ctx.lineTo(s.x,s.y-b2.z);
+    ctx.lineTo(s.x+4,s.y-b2.z-flap); ctx.stroke();
+  }
   for(const p of M.projectiles){
     if(!vis(p.x,p.y))continue;
     const s=S(p.x,p.y),sy=s.y-(p.z||0);
@@ -2346,6 +2470,22 @@ function drawAtmosphere(){
     ctx.fillStyle='rgba(20,10,50,0.18)'; ctx.fillRect(0,0,W,H);
   } else if(M.light==='night'){
     ctx.fillStyle='rgba(8,10,32,0.44)'; ctx.fillRect(0,0,W,H);
+    /* combat lights up the night: tracer glow & explosion light */
+    const camX=M.cam.x,camY=M.cam.y;
+    const S=(wx,wy)=>{const p=P(wx,wy);return{x:p.x-camX,y:p.y-camY};};
+    for(const p of M.projectiles){
+      const s=S(p.x,p.y);
+      if(s.x<-30||s.x>W+30||s.y<-30||s.y>H+30)continue;
+      ctx.fillStyle=p.from==='player'?'rgba(255,225,140,0.22)':'rgba(255,160,90,0.2)';
+      ctx.beginPath(); ctx.arc(s.x,s.y-(p.z||0),11,0,TAU); ctx.fill();
+    }
+    for(const f of M.effects){
+      if(f.smoke)continue;
+      const s=S(f.x,f.y);
+      if(s.x<-60||s.x>W+60||s.y<-60||s.y>H+60)continue;
+      ctx.fillStyle='rgba(255,190,90,'+(0.1*clamp(f.life/f.max,0,1))+')';
+      ctx.beginPath(); ctx.arc(s.x,s.y-(f.z||0),f.size*3.4,0,TAU); ctx.fill();
+    }
   }
   if(M.weather==='sand'){
     ctx.fillStyle='rgba(205,165,90,0.16)'; ctx.fillRect(0,0,W,H);
@@ -2662,14 +2802,16 @@ function drawControls(){
   const solo=[
     ['FLY','WASD or ARROWS or LEFT STICK'],
     ['FIRE','SPACE / A BTN'],
+    ['STRAFE LOCK','hold SHIFT / LB — nose stays on target'],
     ['CYCLE WEAPON','Q or TAB / X BTN  ·  1/2/3 direct'],
     ['WINCH & LAND','E / B BTN  (hover slow over POW or pad)'],
+    ['RESUPPLY DROP','R / Y BTN — one crate per mission'],
   ];
   solo.forEach((r,i)=>{
-    textShadow(x+56,y+82+i*26,r[0],12,'#ffd75e');
-    textShadow(x+250,y+82+i*26,r[1],12,'#ddd');
+    textShadow(x+56,y+78+i*21,r[0],12,'#ffd75e');
+    textShadow(x+250,y+78+i*21,r[1],12,'#ddd');
   });
-  textShadow(x+40,y+200,'TWO-PLAYER CO-OP — SAME KEYBOARD (OR PAD FOR GUNNER)',13,'#7fd77f');
+  textShadow(x+40,y+206,'TWO-PLAYER CO-OP — SAME KEYBOARD (OR PAD FOR GUNNER)',13,'#7fd77f');
   const coop=[
     ['PILOT FLIES','WASD  ·  winch/land on E'],
     ['GUNNER AIMS','ARROW KEYS or LEFT STICK — yellow reticle'],
