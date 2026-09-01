@@ -67,7 +67,7 @@ const SAVE_KEY='pauls-strike-save-v2', SET_KEY='pauls-strike-settings-v2';
 function loadJSON(k){try{const s=localStorage.getItem(k);return s?JSON.parse(s):null;}catch(e){return null;}}
 function saveJSON(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 function clearSave(){try{localStorage.removeItem(SAVE_KEY);}catch(e){}}
-const settings=Object.assign({crt:true,sound:true,diff:'normal',coop:false,pixel:true},loadJSON(SET_KEY)||{});
+const settings=Object.assign({crt:true,sound:true,diff:'normal',coop:false,pixel:true,mmusic:false},loadJSON(SET_KEY)||{});
 function saveSettings(){saveJSON(SET_KEY,settings);}
 function applyCrt(){document.body.classList.toggle('crt-on',!!settings.crt);}
 applyCrt();
@@ -178,19 +178,33 @@ const SFX={
   confirm(){tone(392,0.07,'square',0.15);tone(587,0.1,'square',0.15,AU.ctx?AU.ctx.currentTime+0.07:0);}
 };
 function sfx(name){if(AU.ctx&&!AU.muted)try{SFX[name]();}catch(e){}}
+/* Original compositions in the Genesis FM-rock style —
+   driving minor-key military riffs, detuned saw leads, power stabs. */
 const THEMES={
-  title:{bpm:126,drums:true,
-    bass:[40,40,47,40,40,43,40,45,40,40,47,40,43,41,40,38],
-    lead:[64,0,62,64,67,0,64,0,62,0,60,62,64,0,0,0]},
-  menu:{bpm:104,drums:false,
+  title:{bpm:128,drums:'rock',leadAlways:true,
+    bass:[40,0,40,40,0,40,0,43,45,0,43,0,40,0,38,0,
+          40,0,40,40,0,40,0,43,47,0,45,0,43,0,41,38],
+    lead:[0,0,0,0,64,0,64,66,67,0,66,0,64,0,62,0,
+          0,0,0,0,64,0,67,0,71,0,69,0,67,0,66,64],
+    stab:[52,0,0,0,0,0,0,0,55,0,0,0,0,0,0,0,
+          52,0,0,0,0,0,0,0,50,0,0,0,53,0,0,0]},
+  menu:{bpm:100,drums:false,
     bass:[40,0,0,0,43,0,0,0,45,0,0,0,43,0,41,0],
     lead:[0,0,64,0,0,0,0,0,0,0,62,0,0,0,0,0]},
-  brief:{bpm:96,drums:false,
-    bass:[40,0,0,0,0,0,46,0,40,0,0,0,45,0,0,0],
+  brief:{bpm:84,drums:'sparse',
+    bass:[40,0,0,0,0,0,46,0,40,0,0,0,45,0,44,0,
+          40,0,0,0,0,0,46,0,40,0,0,0,43,0,41,0],
+    lead:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          64,0,0,0,63,0,0,0,0,0,0,0,0,0,0,0]},
+  action:{bpm:134,drums:'rock',
+    bass:[40,40,0,40,0,40,43,0,40,40,0,40,0,45,43,41,
+          40,40,0,40,0,40,43,0,47,0,45,0,43,0,41,38],
     lead:[]},
-  win:{bpm:112,drums:true,
-    bass:[45,0,45,0,48,0,45,0,43,0,43,0,47,0,43,0],
-    lead:[69,0,0,67,69,0,72,0,67,0,0,0,64,0,67,0]}
+  win:{bpm:118,drums:'rock',leadAlways:true,
+    bass:[48,0,48,0,53,0,48,0,55,0,53,0,48,0,46,0,
+          48,0,48,0,53,0,55,0,57,0,55,0,53,0,55,0],
+    lead:[72,0,0,76,0,0,79,0,84,0,79,0,76,0,79,0,
+          72,0,0,76,0,0,81,0,79,0,76,0,72,0,74,76]}
 };
 function midi(n){return 440*Math.pow(2,(n-69)/12);}
 function setTheme(name){AU.theme=name; AU.step=0; if(AU.ctx)AU.nextT=AU.ctx.currentTime+0.1;}
@@ -214,15 +228,33 @@ function schedNoiseM(t,dur,hp,vol){
 function musicTick(){
   if(!AU.ctx||!AU.theme||AU.muted)return;
   const th=THEMES[AU.theme]; if(!th)return;
-  const stepDur=60/th.bpm/4;
+  const len=th.bass.length,stepDur=60/th.bpm/4;
   while(AU.nextT<AU.ctx.currentTime+0.12){
-    const i=AU.step%16,t=AU.nextT;
-    const b=th.bass[i]; if(b){schedNote(midi(b),t,stepDur*1.5,'square',0.13);schedNote(midi(b),t,stepDur*1.5,'sawtooth',0.05,8);}
-    const l=th.lead&&th.lead[i]; if(l&&(Math.floor(AU.step/16)%2===1)){schedNote(midi(l),t,stepDur*1.3,'sawtooth',0.06);schedNote(midi(l),t,stepDur*1.3,'sawtooth',0.03,10);}
-    if(th.drums){
-      if(i%4===0)schedKick(t);
-      if(i===4||i===12)schedNoiseM(t,0.09,1500,0.15);
-      if(i%2===0)schedNoiseM(t,0.03,6000,0.05);
+    const i=AU.step%len,t=AU.nextT;
+    const b=th.bass[i];
+    if(b){ /* slap bass: square + sub octave */
+      schedNote(midi(b),t,stepDur*1.4,'square',0.13);
+      schedNote(midi(b-12),t,stepDur*1.4,'sine',0.1);
+      schedNote(midi(b),t,stepDur*1.4,'sawtooth',0.04,9);
+    }
+    const l=th.lead&&th.lead[i];
+    if(l&&(th.leadAlways||Math.floor(AU.step/len)%2===1)){ /* FM-style lead: detuned saw pair + octave shimmer */
+      schedNote(midi(l),t,stepDur*1.6,'sawtooth',0.06);
+      schedNote(midi(l),t,stepDur*1.6,'sawtooth',0.035,11);
+      schedNote(midi(l+12),t,stepDur*0.9,'square',0.018);
+    }
+    const st=th.stab&&th.stab[i];
+    if(st){ /* power-chord stab: root+fifth+octave */
+      for(const iv of[0,7,12])schedNote(midi(st+iv),t,stepDur*2.8,'sawtooth',0.045);
+    }
+    if(th.drums==='rock'){
+      if(i%len===0)schedNoiseM(t,0.4,700,0.12); /* crash */
+      if(i%8===0||i%8===6)schedKick(t);
+      if(i%8===4)schedNoiseM(t,0.1,1400,0.17);  /* snare */
+      if(i%2===0)schedNoiseM(t,0.03,6000,0.05); /* hat */
+      if(i%len===len-2||i%len===len-1)schedNoiseM(t,0.07,1100,0.12); /* fill */
+    } else if(th.drums==='sparse'){
+      if(i%8===0)schedKick(t);
     }
     AU.step++; AU.nextT+=stepDur;
   }
@@ -445,8 +477,9 @@ function buildMission(mi){
   const nB=city?42:14;
   for(let i=0;i<nB;i++){
     const p=place(city?120:170);
+    const kr=rng();
     M.bldgs.push({x:p.x,y:p.y,w:30+rng()*(city?34:26),d:26+rng()*(city?30:20),h:22+rng()*(city?46:20),hp:40,dead:false,
-      kind:city?'block':(rng()<0.28?'tower':'hut'),lit:rng()});
+      kind:city?'block':(kr<0.24?'tower':(kr<0.5&&!jungle?'compound':'hut')),lit:rng()});
   }
   /* fenced compounds around key sites, with a gate gap */
   M.fences=[];
@@ -509,7 +542,7 @@ function buildMission(mi){
 function deployMission(){
   const def=M.def;
   M.deployed=true;
-  setTheme(null); /* missions run on rotor and gunfire, like the original */
+  setTheme(settings.mmusic?'action':null); /* default: rotor and gunfire only, like the original */
   say("Deploying. "+def.name+". Objectives are on your map, Paul. Make me proud.");
   if(settings.coop)say("Gunner seat is hot. Two sets of eyes — just how it should be.");
   if(def.boss==='citadel')say("Turrets first, son. The core's armor is thick — bring the Hellfires.");
@@ -1145,6 +1178,81 @@ function cnv(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;
   g.fillStyle='#3c3c34'; g.fillRect(4,8,4,4); g.fillRect(14,8,4,4);
   SPRITES.radarV=c;
 })();
+/* pixel-art crew portraits, painted procedurally */
+function makePortrait(o){
+  const c=cnv(20,23),g=c.getContext('2d');
+  const px=(x,y,w,h,col)=>{g.fillStyle=col;g.fillRect(x,y,w,h);};
+  px(5,2,10,12,'#0e0c08');                       /* head outline */
+  px(6,3,8,10,o.skin);
+  px(6,11,8,1,o.skinD);
+  if(o.gray){px(6,3,1,4,'#b8b8b0');px(13,3,1,4,'#b8b8b0');}
+  if(o.aviators){px(6,6,8,2,'#14120e');px(9,6,1,1,'#3c3a36');}
+  else{px(7,6,2,1,'#141210');px(11,6,2,1,'#141210');}
+  px(9,8,2,1,o.skinD);                            /* nose */
+  if(o.stache)px(7,9,6,1,'#4a3826');
+  px(8,10,4,1,'#8a5c48');                         /* mouth */
+  if(o.hat==='helmet'){
+    px(4,1,12,4,'#0e0c08'); px(5,2,10,3,o.hatC); px(5,2,10,1,o.hatD);
+    px(3,5,3,5,'#0e0c08'); px(4,6,2,3,'#23281c'); /* ear cup */
+    px(4,9,6,1,'#23281c'); px(9,9,1,2,'#111');    /* boom mic */
+  } else if(o.hat==='cap'){
+    px(4,1,12,3,'#0e0c08'); px(5,2,10,2,o.hatC);
+    px(12,3,6,2,'#0e0c08'); px(12,3,5,1,o.hatD);  /* brim */
+  } else if(o.hat==='peaked'){
+    px(3,0,14,4,'#0e0c08'); px(4,1,12,3,o.hatC);
+    px(3,4,14,1,'#14120c'); px(9,1,2,2,'#e8c860'); /* badge */
+  } else {px(5,2,10,2,o.hatC);}
+  px(2,14,16,9,'#0e0c08');                        /* torso outline */
+  px(3,15,14,8,o.uni); px(3,15,14,2,o.uniD);
+  px(8,13,4,2,o.skin);                            /* neck */
+  if(o.ribbons){px(4,17,2,1,'#c04040');px(6,17,2,1,'#e8c860');px(4,18,2,1,'#4060c0');px(6,18,2,1,'#c8c8c8');}
+  if(o.zip){px(9,16,2,7,o.uniD);}
+  return c;
+}
+const PORTRAITS={
+  goose:  makePortrait({skin:'#d8a878',skinD:'#b8875c',hat:'helmet',hatC:'#4c5a30',hatD:'#5e6c3e',uni:'#4c5a30',uniD:'#3c481f',zip:true}),
+  hawk:   makePortrait({skin:'#c08858',skinD:'#a06c42',hat:'cap',hatC:'#2c3444',hatD:'#3a4458',uni:'#3a4458',uniD:'#2c3444',aviators:true}),
+  wrench: makePortrait({skin:'#e0b088',skinD:'#c08c60',hat:'cap',hatC:'#8a2c20',hatD:'#a8402e',uni:'#6a5a38',uniD:'#544628',stache:true,zip:true}),
+  colonel:makePortrait({skin:'#d8a878',skinD:'#b8875c',hat:'peaked',hatC:'#3a4228',hatD:'#4a5434',uni:'#4c5a30',uniD:'#3c481f',stache:true,gray:true,ribbons:true})
+};
+/* ¾ side-profile Apache — the view the game actually uses in flight */
+function makeSideApache(p){
+  const c=cnv(46,20),g=c.getContext('2d');
+  const px=(x,y,w,h,col)=>{g.fillStyle=col;g.fillRect(x,y,w,h);};
+  px(2,4,3,7,p.d); px(2,4,2,2,p.d2);              /* tail fin */
+  px(4,9,13,3,p.b); px(4,9,13,1,p.hl);            /* tail boom */
+  px(5,12,5,1,p.d2);                              /* stabilizer */
+  px(16,6,20,8,p.o);                              /* fuselage outline */
+  px(17,7,18,6,p.b);
+  px(18,7,15,2,p.hl);                             /* top highlight */
+  px(20,4,9,3,p.o); px(21,5,7,2,p.b2);            /* engine hump */
+  px(29,5,5,4,p.o); px(30,6,3,3,p.gl2);           /* rear canopy */
+  px(33,6,5,4,p.o); px(34,7,3,3,p.gl);            /* front canopy */
+  px(36,9,7,4,p.o); px(36,10,6,2,p.d);            /* nose */
+  px(38,13,6,1,'#1c1c18'); px(43,13,1,2,'#1c1c18');/* chin gun */
+  px(23,12,9,2,p.o); px(24,13,7,1,p.d);           /* wing */
+  px(22,14,5,4,p.o); px(23,15,3,1,'#3c3c38'); px(23,17,3,1,'#3c3c38'); /* rocket pod */
+  px(19,15,2,3,'#111'); px(33,15,2,3,'#111');     /* wheels */
+  px(22,2,2,3,p.o);                               /* rotor mast */
+  return c;
+}
+SPRITES.sideP=makeSideApache({o:'#0f130a',b:'#42562a',b2:'#4c6032',hl:'#5c7438',d:'#33421f',d2:'#22301a',gl:'#9fd0dd',gl2:'#8ac0d0'});
+SPRITES.sideH=makeSideApache({o:'#170f06',b:'#63512e',b2:'#6d5a34',hl:'#826c3c',d:'#4a3a22',d2:'#3a2e1a',gl:'#e0c890',gl2:'#c8ac70'});
+SPRITES.sideG=makeSideApache({o:'#050508',b:'#242430',b2:'#2c2c38',hl:'#3a3a48',d:'#16161c',d2:'#101016',gl:'#ff6a5a',gl2:'#c83a2c'});
+function drawSideChopper(x,y,scale,t,key){
+  const c=SPRITES[key||'sideP'];
+  ctx.save(); ctx.imageSmoothingEnabled=false;
+  ctx.translate(x,y); ctx.scale(scale,scale);
+  ctx.drawImage(c,-23,-10);
+  const sp=Math.abs(Math.sin((t||0)*2));
+  ctx.fillStyle='rgba(20,22,16,0.25)';
+  ctx.beginPath(); ctx.ellipse(0,-8,21,3,0,0,TAU); ctx.fill();
+  ctx.fillStyle='rgba(20,22,16,0.85)';
+  ctx.fillRect(-21*sp,-9,42*sp,1.4);
+  const th=1+5*Math.abs(Math.sin((t||0)*3));
+  ctx.fillRect(-21.5,3-th/2,1.2,th);
+  ctx.restore();
+}
 const QSTEP=TAU/16;
 function drawVehSprite(key,x,y,ang,sc){
   const c=SPRITES[key]; if(!c)return;
@@ -1154,30 +1262,34 @@ function drawVehSprite(key,x,y,ang,sc){
   ctx.drawImage(c,-c.width/2,-c.height/2);
   ctx.restore();
 }
+/* in-flight renderer: ¾ side profile, mirrored for left flight,
+   pitched toward the vertical component of the heading — like the game */
 function drawChopperSprite(x,y,screenAng,bank,rotorT,scale,palKey){
-  screenAng=Math.round(screenAng/QSTEP)*QSTEP;
-  const spr=SPRITES[palKey||'player'];
-  const sw=spr.body.width*2,sh=spr.body.height*2;
+  const key={player:'sideP',heli:'sideH',ghost:'sideG'}[palKey||'player']||'sideP';
+  const c=SPRITES[key];
+  let a=Math.round(screenAng/QSTEP)*QSTEP;
+  a=Math.atan2(Math.sin(a),Math.cos(a));
+  const mirror=Math.abs(a)>Math.PI/2+0.01?-1:1;
+  let tilt=Math.sin(a)*0.5*mirror;
   ctx.save();
   ctx.imageSmoothingEnabled=false;
   ctx.translate(x,y);
-  ctx.scale(scale,scale*0.85);
-  ctx.rotate(screenAng);
-  ctx.scale(1,1-Math.abs(bank)*0.3);
-  ctx.drawImage(spr.body,-sw/2,-sh/2,sw,sh);
-  /* tail rotor */
-  ctx.save(); ctx.translate(-sw/2+7,0); ctx.rotate(rotorT*3);
-  ctx.strokeStyle='rgba(25,25,25,0.85)'; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.moveTo(-8,0); ctx.lineTo(8,0); ctx.stroke(); ctx.restore();
-  /* main rotor */
-  ctx.save(); ctx.translate(2,0); ctx.rotate(rotorT);
-  ctx.strokeStyle='rgba(20,22,16,0.8)'; ctx.lineWidth=3;
-  ctx.beginPath(); ctx.moveTo(-31,0); ctx.lineTo(31,0);
-  ctx.moveTo(0,-31); ctx.lineTo(0,31); ctx.stroke();
-  ctx.fillStyle='rgba(120,120,120,0.13)';
-  ctx.beginPath(); ctx.arc(0,0,31,0,TAU); ctx.fill();
-  ctx.fillStyle='#101208'; ctx.fillRect(-3,-3,6,6);
-  ctx.restore();
+  ctx.scale(scale*mirror,scale);
+  ctx.rotate(tilt);
+  ctx.scale(1,1-Math.abs(bank)*0.12);
+  ctx.drawImage(c,-50,-22,92,40);
+  /* rotor: blur disc + sweeping blade */
+  ctx.globalAlpha=0.22;
+  ctx.fillStyle='#14160e';
+  ctx.beginPath(); ctx.ellipse(-4,-16,42,7,0,0,TAU); ctx.fill();
+  ctx.globalAlpha=0.8;
+  const sp2=Math.abs(Math.sin(rotorT*2));
+  ctx.fillRect(-4-42*sp2,-18,84*sp2,2.6);
+  ctx.globalAlpha=1;
+  /* tail rotor spin */
+  const th=3+11*Math.abs(Math.sin(rotorT*3));
+  ctx.fillStyle='rgba(20,22,16,0.8)';
+  ctx.fillRect(-46,-4-th/2,2.2,th);
   ctx.restore();
 }
 function drawShadowSprite(sx,sy,screenAng,scale,palKey){
@@ -1601,8 +1713,19 @@ function drawUprightPass(shX,shY){
         ctx.beginPath(); ctx.arc(s.x,s.y-t.r-6,t.r,0,TAU); ctx.fill();
         ctx.fillStyle='rgba(90,140,60,0.5)';
         ctx.beginPath(); ctx.arc(s.x-t.r*0.3,s.y-t.r-6-t.r*0.3,t.r*0.5,0,TAU); ctx.fill();
-      } else {
-        ctx.fillStyle=t.g<0.5?'#5c7a3a':'#6d8a48';
+      } else if(t.g<0.45){ /* palm */
+        const h2=t.r*2.2;
+        ctx.fillStyle='#6a4c2a'; ctx.fillRect(s.x-1.5,s.y-h2,3,h2);
+        ctx.strokeStyle='#3f6a26'; ctx.lineWidth=2.5;
+        for(let fr=0;fr<5;fr++){
+          const fa=-Math.PI/2+(fr-2)*0.55;
+          ctx.beginPath(); ctx.moveTo(s.x,s.y-h2);
+          ctx.quadraticCurveTo(s.x+Math.cos(fa)*t.r*1.2,s.y-h2+Math.sin(fa)*t.r*0.9-4,
+            s.x+Math.cos(fa)*t.r*1.7,s.y-h2+Math.sin(fa)*t.r*1.1+3);
+          ctx.stroke();
+        }
+      } else { /* cactus */
+        ctx.fillStyle=t.g<0.7?'#5c7a3a':'#6d8a48';
         ctx.fillRect(s.x-2,s.y-t.r*1.6,4,t.r*1.6);
         ctx.fillRect(s.x-t.r*0.8,s.y-t.r*1.1,t.r*0.7,3);
         ctx.fillRect(s.x+t.r*0.1,s.y-t.r*1.35,t.r*0.7,3);
@@ -1615,6 +1738,16 @@ function drawUprightPass(shX,shY){
     items.push({sy:s.y,draw(){
       if(b.kind==='hut'){
         drawWoodHut(camX,camY,b);
+      } else if(b.kind==='compound'){ /* white flat-roof compound with roof gear */
+        const h2=b.h*0.55;
+        drawIsoBox(camX,camY,b.x,b.y,b.w*0.6,b.d*0.6,h2,'#e6e2d4','#bcb8aa','#a8a496');
+        ctx.fillStyle='#3a3630';
+        ctx.fillRect(s.x-b.w*0.25,s.y-h2*1.05-14,2.5,14);
+        ctx.fillRect(s.x+b.w*0.15,s.y-h2*1.05-10,2.5,10);
+        ctx.strokeStyle='#55524a'; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.arc(s.x+b.w*0.16,s.y-h2*1.05-11,4,Math.PI*0.9,Math.PI*1.9); ctx.stroke();
+        ctx.fillStyle='#4a463e';
+        ctx.fillRect(s.x-4,s.y-h2*0.6,8,h2*0.6);
       } else if(b.kind==='tower'){
         drawWatchtower(camX,camY,b);
       } else { /* city block */
@@ -1851,7 +1984,7 @@ function drawAtmosphere(){
 }
 function drawHUD(){
   const ch=M.ch;
-  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(0,0,W,52);
+  ctx.fillStyle='rgba(10,10,7,0.92)'; ctx.fillRect(0,0,W,52);
   textShadow(16,7,'FUEL',12,'#bbb');
   ctx.fillStyle='#222'; ctx.fillRect(16,24,150,14);
   ctx.fillStyle=ch.fuel>25?'#5fd75f':(Math.sin(M.time*8)>0?'#ff4040':'#992020');
@@ -1869,7 +2002,7 @@ function drawHUD(){
   textShadow(560,22,ch.aboard+' / '+(chief().cap||6),15,'#8fd4e8');
   textShadow(660,7,'BIRDS',12,'#bbb');
   for(let i=0;i<Math.min(G.lives,6);i++){
-    drawChopperSprite(672+i*26,32,-Math.PI/2,0,M.time*20,0.32);
+    drawSideChopper(676+i*30,32,0.55,M.time*10);
   }
   textShadow(W-16,7,'SCORE',12,'#bbb','right');
   textShadow(W-16,22,fmt(G.score),15,'#fff','right');
@@ -1953,7 +2086,7 @@ function drawTitle(){
   ctx.fillStyle='#ffb347'; ctx.beginPath(); ctx.arc(W*0.78,H*0.30,54,0,TAU); ctx.fill();
   ctx.fillStyle='rgba(255,179,71,0.25)'; ctx.beginPath(); ctx.arc(W*0.78,H*0.30,80,0,TAU); ctx.fill();
   const chx=((stTime*90)%(W+300))-150;
-  drawChopperSprite(chx,H*0.42,0,0.1,stTime*25,1.4);
+  drawSideChopper(chx,H*0.42,2.6,stTime*12);
   textShadow(W/2+4,84,"PAUL'S STRIKE",64,'#2a1a08','center');
   textShadow(W/2,80,"PAUL'S STRIKE",64,'#ffd75e','center');
   textShadow(W/2,158,'A  DESERT  STRIKE  TRIBUTE',16,'#e8dfa8','center');
@@ -1971,6 +2104,7 @@ function menuItems(){
   items.push({id:'mode',label:'CREW: '+(settings.coop?'TWO-PLAYER (PILOT + GUNNER)':'SOLO PILOT')});
   items.push({id:'diff',label:'DIFFICULTY: '+DIFF[settings.diff].label});
   items.push({id:'crt',label:'CRT FILTER: '+(settings.crt?'ON':'OFF')});
+  items.push({id:'mmusic',label:'MISSION MUSIC: '+(settings.mmusic?'ON':'OFF (AUTHENTIC)')});
   items.push({id:'sound',label:'SOUND: '+(AU.muted?'OFF':'ON')});
   items.push({id:'controls',label:'CONTROLS'});
   return items;
@@ -2014,6 +2148,7 @@ function drawMenu(){
     else if(it.id==='mode'){settings.coop=!settings.coop;saveSettings();}
     else if(it.id==='diff')cycleDiff(1);
     else if(it.id==='crt'){settings.crt=!settings.crt;saveSettings();applyCrt();}
+    else if(it.id==='mmusic'){settings.mmusic=!settings.mmusic;saveSettings();}
     else if(it.id==='sound'){setMuted(!AU.muted);}
     else if(it.id==='controls'){state='controls';stTime=0;}
   }
@@ -2091,12 +2226,9 @@ function drawChiefSelect(){
     ctx.strokeStyle=sel?'#ffd75e':'#4a6330'; ctx.lineWidth=sel?3:2;
     ctx.strokeRect(cx,y+80,200,220);
     if(sel){ctx.fillStyle='rgba(255,215,94,0.07)';ctx.fillRect(cx,y+80,200,220);}
-    const px=cx+100,py=y+150;
-    ctx.fillStyle=['#5a6a3a','#4a5a6a','#6a5a3a'][i]; ctx.fillRect(px-24,py-6,48,42);
-    ctx.fillStyle='#c9a06a'; ctx.beginPath(); ctx.arc(px,py-20,15,0,TAU); ctx.fill();
-    if(i===0){ctx.fillStyle='#333';ctx.fillRect(px-15,py-30,30,7);}
-    if(i===1){ctx.fillStyle='#222';ctx.fillRect(px-13,py-26,26,5);}
-    if(i===2){ctx.fillStyle='#8a3c2c';ctx.fillRect(px-15,py-34,30,9);}
+    const port=PORTRAITS[cf.id];
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(port,cx+100-50,y+96,100,115);
     textShadow(cx+100,y+210,cf.name,13,sel?'#ffd75e':'#fff','center');
     textShadow(cx+100,y+230,cf.role,11,'#7fd77f','center');
     textShadow(cx+100,y+252,cf.desc,10,'#bbb','center');
@@ -2111,17 +2243,13 @@ function drawCrew(){
   const {x,y}=centerPanel(620,380);
   textShadow(W/2,y+20,'FLIGHT CREW',26,'#ffd75e','center');
   ctx.strokeStyle='#4a6330'; ctx.lineWidth=2; ctx.strokeRect(x+40,y+70,250,220);
-  drawChopperSprite(x+165,y+145,-Math.PI/2,0,0.65,2.0);
+  drawSideChopper(x+165,y+140,3.6,stTime);
   textShadow(x+165,y+200,'PILOT',13,'#aaa','center');
   textShadow(x+165,y+220,'PAUL "SIDEWINDER"',16,'#fff','center');
   textShadow(x+165,y+244,'CHIEF: '+chief().name,11,'#888','center');
   ctx.strokeStyle='#4a6330'; ctx.strokeRect(x+330,y+70,250,220);
-  const px=x+455,py=y+140;
-  ctx.fillStyle='#5a6a3a'; ctx.fillRect(px-28,py-8,56,50);
-  ctx.fillStyle='#c9a06a'; ctx.beginPath(); ctx.arc(px,py-24,18,0,TAU); ctx.fill();
-  ctx.fillStyle='#3a4228'; ctx.fillRect(px-20,py-46,40,12);
-  ctx.fillStyle='#ffd75e'; ctx.fillRect(px-6,py-46,12,4);
-  ctx.fillStyle='#888'; ctx.fillRect(px-24,py+2,10,4); ctx.fillRect(px-24,py+10,10,4);
+  ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(PORTRAITS.colonel,x+455-52,y+82,104,120);
   textShadow(x+455,y+200,'CO-PILOT / RADIO',13,'#aaa','center');
   textShadow(x+455,y+220,'"THE COLONEL"',16,'#7fd77f','center');
   textShadow(x+455,y+244,'EYES, EARS & WISDOM',11,'#888','center');
