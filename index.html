@@ -90,11 +90,14 @@ const PASSWORDS={
    The Colonel always flies co-pilot; he is not on this list. */
 const CHIEFS=[
   {id:'goose', name:'"GOOSE" GRIGGS',  role:'WINCH ACE',
-   desc:'Faster winch · carries 8 souls', winch:0.72, cap:8},
+   desc:'Faster winch · carries 8 souls', winch:0.72, cap:8,
+   bio:'Four years combat search & rescue.\nNever lost a man on the line.',stats:[5,2,2]},
   {id:'hawk',  name:'"HAWKEYE" CRUZ',  role:'WEAPONS',
-   desc:'+30% gun damage · +200 rounds', gunDmg:1.3, gunAmmo:200},
+   desc:'+30% gun damage · +200 rounds', gunDmg:1.3, gunAmmo:200,
+   bio:'Top of gunnery school, two tours.\nCalls her shots before she takes them.',stats:[2,5,2]},
   {id:'wrench',name:'"WRENCH" KOWALSKI',role:'MECHANIC',
-   desc:'+25 max armor · fast pad repairs', armor:125, repair:1.7}
+   desc:'+25 max armor · fast pad repairs', armor:125, repair:1.7,
+   bio:'Keeps birds flying on duct tape,\ncoffee and sheer stubbornness.',stats:[2,2,5]}
 ];
 function chief(){return CHIEFS[(G&&G.cp)||0];}
 
@@ -412,7 +415,7 @@ function saveProgress(){
 function makeEnemy(type,x,y,hpMult){
   const base={
     tank:{hp:70,r:20},aa:{hp:55,r:18},sam:{hp:60,r:19},rpg:{hp:16,r:10},radar:{hp:45,r:22},
-    heli:{hp:50,r:16},mob:{hp:55,r:20},barracks:{hp:120,r:26},boatp:{hp:60,r:20},
+    heli:{hp:50,r:16},mob:{hp:55,r:20},barracks:{hp:120,r:26},boatp:{hp:60,r:20},jet:{hp:30,r:17},
     turret:{hp:150,r:22},core:{hp:850,r:55},boat:{hp:950,r:42},ghost:{hp:1100,r:30}
   }[type];
   return {type,x,y,hx:x,hy:y,hp:base.hp*hpMult,maxhp:base.hp*hpMult,r:base.r,cd:1+Math.random()*2,
@@ -422,7 +425,8 @@ function buildMission(mi){
   const def=MISSIONS[mi];
   const d=DIFF[G.diff];
   const rng=mulberry32(def.seed);
-  const pad={x:440,y:440};
+  const ocean=def.camp===0?380:0;               /* desert campaigns launch from the frigate */
+  const pad=ocean?{x:212,y:768}:{x:440,y:440};
   M={def,mi,camp:def.camp,pad,rng,light:def.light,weather:def.weather,
     time:0,cam:{x:0,y:0},shake:0,deployed:false,
     enemies:[],projectiles:[],pickups:[],pows:[],effects:[],debris:[],craters:[],wrecks:[],bldgs:[],
@@ -434,6 +438,8 @@ function buildMission(mi){
     fuelWarn:0,lowBeep:0,over:false,dying:0,
     gunAng:-Math.PI/2,
     ch:null};
+  M.ocean=ocean;
+  if(ocean)M.frigate={x:212,y:640};
   const jungle=def.camp===1,city=def.camp===2;
   if(jungle){
     const pts=[]; let y=600+rng()*2000;
@@ -447,16 +453,18 @@ function buildMission(mi){
   const nTrees=jungle?380:(city?0:55);
   for(let i=0;i<nTrees;i++){
     const x=rng()*WORLD,y=rng()*WORLD;
+    if(x<ocean+60)continue;
     if(dist(x,y,pad.x,pad.y)<200)continue;
     if(M.river&&distToRiver(x,y)<90)continue;
     M.trees.push({x,y,r:jungle?13+rng()*15:7+rng()*6,g:rng()});
   }
-  for(let i=0;i<(city?20:70);i++){M.rocks.push({x:rng()*WORLD,y:rng()*WORLD,r:4+rng()*8});}
-  for(let i=0;i<200;i++){M.patches.push({x:rng()*WORLD,y:rng()*WORLD,w:80+rng()*260,h:50+rng()*160,c:rng()});}
+  for(let i=0;i<(city?20:70);i++){const x=rng()*WORLD;if(x<ocean+40)continue;M.rocks.push({x,y:rng()*WORLD,r:4+rng()*8});}
+  for(let i=0;i<200;i++){const x=rng()*WORLD;if(x<ocean)continue;M.patches.push({x,y:rng()*WORLD,w:80+rng()*260,h:50+rng()*160,c:rng()});}
   const placed=[];
   function place(minDist){
+    const minX=ocean?ocean+150:250;
     for(let tries=0;tries<200;tries++){
-      const x=250+rng()*(WORLD-500),y=250+rng()*(WORLD-500);
+      const x=minX+rng()*(WORLD-minX-250),y=250+rng()*(WORLD-500);
       let ok=dist(x,y,pad.x,pad.y)>520;
       if(ok&&M.river&&distToRiver(x,y)<90)ok=false;
       if(ok)for(const p of placed){if(dist(x,y,p.x,p.y)<(minDist||120)){ok=false;break;}}
@@ -498,12 +506,22 @@ function buildMission(mi){
       }
     }
   }
-  /* dirt roads from the base pad out to the compounds */
+  /* dirt roads from the shore/base out to the compounds */
   M.roads=[];
+  const roadStart=ocean?{x:ocean+90,y:clamp(pad.y,500,WORLD-500)}:pad;
   for(const a of anchors.slice(0,2)){
-    M.roads.push([{x:pad.x,y:pad.y},
-      {x:(pad.x+a.x)/2+(rng()*2-1)*220,y:(pad.y+a.y)/2+(rng()*2-1)*220},
+    M.roads.push([{x:roadStart.x,y:roadStart.y},
+      {x:(roadStart.x+a.x)/2+(rng()*2-1)*220,y:(roadStart.y+a.y)/2+(rng()*2-1)*220},
       {x:a.x,y:a.y}]);
+  }
+  /* enemy airfield: runway cross, parked jets, hangar */
+  if(def.camp===0){
+    const af=place(520); M.airfield=af;
+    for(let i=0;i<3;i++){
+      const j=makeEnemy('jet',af.x-150+i*150,af.y+80,d.hp);
+      j.ang=-0.4; M.enemies.push(j);
+    }
+    M.bldgs.push({x:af.x-120,y:af.y-170,w:96,d:72,h:44,hp:90,dead:false,kind:'hangar',lit:0});
   }
   /* landmark props: mesas, oil derricks, crashed aircraft */
   M.props=[];
@@ -544,6 +562,7 @@ function deployMission(){
   M.deployed=true;
   setTheme(settings.mmusic?'action':null); /* default: rotor and gunfire only, like the original */
   say("Deploying. "+def.name+". Objectives are on your map, Paul. Make me proud.");
+  if(M.frigate)say("The frigate is your home plate — set down on her stern pad to rearm, repair and drop off POWs.");
   if(settings.coop)say("Gunner seat is hot. Two sets of eyes — just how it should be.");
   if(def.boss==='citadel')say("Turrets first, son. The core's armor is thick — bring the Hellfires.");
   if(def.boss==='boat')say("Leviathan is on the river. You'll hear her before you see her.");
@@ -686,7 +705,7 @@ function addScore(n){
 }
 function killEnemy(e){
   e.dead=true; M.kills++; G.totalKills++;
-  const scores={tank:250,aa:150,sam:200,rpg:100,radar:300,heli:350,mob:300,barracks:350,boatp:250,
+  const scores={tank:250,aa:150,sam:200,rpg:100,radar:300,heli:350,mob:300,barracks:350,boatp:250,jet:200,
     turret:400,core:2500,boat:3000,ghost:4000};
   addScore(scores[e.type]||100);
   const big=e.type==='core'||e.type==='boat'||e.type==='turret'||e.type==='ghost'||e.type==='barracks';
@@ -888,6 +907,7 @@ function updateEnemies(dt){
       case 'radar':
         e.ang+=dt*1.5;
         break;
+      case 'jet': break; /* parked — pure target (drawn as decal) */
       case 'heli':{ /* enemy patrol chopper: orbits and strafes */
         if(dp<700){
           const want=Math.atan2(ch.y-e.y,ch.x-e.x);
@@ -1516,6 +1536,16 @@ function drawGroundPass(shX,shY){
     ctx.setLineDash([14,30]); ctx.lineDashOffset=-M.time*40;
     ctx.stroke(); ctx.setLineDash([]);
   }
+  /* enemy airfield runway cross */
+  if(M.airfield){
+    const af=M.airfield;
+    ctx.fillStyle='#4a4640';
+    ctx.fillRect(af.x-45,af.y-330,90,660);
+    ctx.fillRect(af.x-330,af.y-45,660,90);
+    ctx.strokeStyle='rgba(230,225,210,0.5)'; ctx.lineWidth=3; ctx.setLineDash([26,22]);
+    ctx.beginPath(); ctx.moveTo(af.x,af.y-320); ctx.lineTo(af.x,af.y+320);
+    ctx.moveTo(af.x-320,af.y); ctx.lineTo(af.x+320,af.y); ctx.stroke(); ctx.setLineDash([]);
+  }
   for(const c of M.craters){
     if(!vis(c.x,c.y,60))continue;
     ctx.fillStyle='rgba(40,30,20,0.55)';
@@ -1545,8 +1575,47 @@ function drawGroundPass(shX,shY){
     if(!vis(r.x,r.y,20))continue;
     ctx.beginPath(); ctx.arc(r.x,r.y,r.r,0,TAU); ctx.fill();
   }
+  /* ocean, shoreline & the frigate */
+  if(M.ocean){
+    ctx.fillStyle='#2a5f96'; ctx.fillRect(-400,-400,M.ocean+400,WORLD+800);
+    ctx.strokeStyle='rgba(190,220,240,0.35)'; ctx.lineWidth=2;
+    ctx.setLineDash([10,26]); ctx.lineDashOffset=-M.time*30;
+    ctx.beginPath();
+    for(let yy=-200;yy<WORLD+200;yy+=46){ctx.moveTo(-380,yy);ctx.lineTo(M.ocean-14,yy+18);}
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='rgba(18,55,100,0.35)';
+    for(let i=0;i<14;i++){ctx.fillRect((i*211)%(M.ocean-100),(i*473)%WORLD,90,50);}
+    ctx.fillStyle='#d8c28c'; ctx.fillRect(M.ocean-14,0,14,WORLD);
+    ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=3;
+    ctx.setLineDash([18,14]); ctx.lineDashOffset=M.time*20;
+    ctx.beginPath(); ctx.moveTo(M.ocean-8,0); ctx.lineTo(M.ocean-8,WORLD); ctx.stroke(); ctx.setLineDash([]);
+  }
+  if(M.frigate){
+    const f=M.frigate;
+    ctx.save(); ctx.translate(f.x,f.y);
+    ctx.strokeStyle='rgba(220,240,255,0.4)'; ctx.lineWidth=5;
+    ctx.beginPath(); ctx.moveTo(-52,-160); ctx.quadraticCurveTo(-70,0,-58,150);
+    ctx.moveTo(52,-160); ctx.quadraticCurveTo(70,0,58,150); ctx.stroke();
+    ctx.fillStyle='#252830';
+    ctx.beginPath();
+    ctx.moveTo(0,-235); ctx.lineTo(40,-140); ctx.lineTo(46,110); ctx.lineTo(30,158);
+    ctx.lineTo(-30,158); ctx.lineTo(-46,110); ctx.lineTo(-40,-140); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#8e959e';
+    ctx.beginPath();
+    ctx.moveTo(0,-225); ctx.lineTo(34,-138); ctx.lineTo(40,106); ctx.lineTo(26,150);
+    ctx.lineTo(-26,150); ctx.lineTo(-40,106); ctx.lineTo(-34,-138); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='#6d747e'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(-30,-100); ctx.lineTo(30,-100); ctx.moveTo(-34,-40); ctx.lineTo(34,-40); ctx.stroke();
+    ctx.fillStyle='#5c636e'; ctx.beginPath(); ctx.arc(0,-160,10,0,TAU); ctx.fill();
+    ctx.fillStyle='#3c424c'; ctx.fillRect(-2,-192,4,26);
+    ctx.fillStyle='#3a4438'; ctx.fillRect(-30,88,60,58);
+    ctx.strokeStyle='#c8cdd4'; ctx.lineWidth=2.5; ctx.strokeRect(-25,93,50,48);
+    ctx.font='bold 34px Consolas'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='#dde2e8'; ctx.fillText('H',0,118); ctx.textBaseline='top';
+    ctx.restore();
+  }
   const px=M.pad.x,py=M.pad.y;
-  if(vis(px,py,140)){
+  if(!M.frigate&&vis(px,py,140)){
     ctx.fillStyle='#555'; ctx.fillRect(px-60,py-60,120,120);
     ctx.strokeStyle='#ccc'; ctx.lineWidth=4; ctx.strokeRect(px-52,py-52,104,104);
     ctx.fillStyle='#ddd';
@@ -1569,6 +1638,18 @@ function drawGroundPass(shX,shY){
     switch(e.type){
       case 'tank': case 'aa': case 'sam': case 'mob':
         break; /* drawn as upright sprites */
+      case 'jet':
+        ctx.rotate(e.ang);
+        ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(3,4,20,8,0,0,TAU); ctx.fill();
+        ctx.fillStyle='#c8ccd2'; ctx.fillRect(-20,-3,40,6);
+        ctx.beginPath(); ctx.moveTo(20,-3); ctx.lineTo(27,0); ctx.lineTo(20,3); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(2,-2); ctx.lineTo(-12,-17); ctx.lineTo(-5,-17); ctx.lineTo(7,-2); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(2,2); ctx.lineTo(-12,17); ctx.lineTo(-5,17); ctx.lineTo(7,2); ctx.closePath(); ctx.fill();
+        ctx.fillStyle='#9aa0a8';
+        ctx.beginPath(); ctx.moveTo(-16,-2); ctx.lineTo(-23,-9); ctx.lineTo(-18,-9); ctx.lineTo(-13,-2); ctx.closePath(); ctx.fill();
+        ctx.fillStyle='#6d747e'; ctx.fillRect(-20,-1.5,5,3);
+        ctx.fillStyle='#4a5058'; ctx.fillRect(8,-2,6,4);
+        break;
       case 'rpg':
         ctx.fillStyle='rgba(0,0,0,0.25)';
         ctx.beginPath(); ctx.ellipse(2,3,7,5,0,0,TAU); ctx.fill();
@@ -1668,6 +1749,20 @@ function drawUprightPass(shX,shY){
       drawShadowSprite(s.x,s.y,worldAngToScreen(e.ang),e.type==='ghost'?1.4:0.8,e.type);
     }
   }
+  /* frigate superstructure */
+  if(M.frigate){
+    const f=M.frigate,sf=S(f.x,f.y);
+    items.push({sy:sf.y,draw(){
+      drawIsoBox(camX,camY,f.x,f.y-46,26,15,22,'#a8aeb6','#7d848e','#6d747e');
+      drawIsoBox(camX,camY,f.x,f.y+8,20,12,14,'#9aa0a8','#70777f','#61686f');
+      const b=S(f.x,f.y-46);
+      ctx.strokeStyle='#3c424c'; ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.moveTo(b.x,b.y-22); ctx.lineTo(b.x,b.y-54); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(b.x-8,b.y-42); ctx.lineTo(b.x+8,b.y-42);
+      ctx.moveTo(b.x-6,b.y-50); ctx.lineTo(b.x+6,b.y-50); ctx.stroke();
+      ctx.fillStyle='#c8cdd4'; ctx.beginPath(); ctx.arc(b.x+3,b.y-36,3.5,0,TAU); ctx.fill();
+    }});
+  }
   /* landmark props: mesas & pumping oil derricks */
   for(const pr of M.props){
     if(pr.kind==='wreck'||!vis(pr.x,pr.y))continue;
@@ -1748,6 +1843,10 @@ function drawUprightPass(shX,shY){
         ctx.beginPath(); ctx.arc(s.x+b.w*0.16,s.y-h2*1.05-11,4,Math.PI*0.9,Math.PI*1.9); ctx.stroke();
         ctx.fillStyle='#4a463e';
         ctx.fillRect(s.x-4,s.y-h2*0.6,8,h2*0.6);
+      } else if(b.kind==='hangar'){
+        drawIsoBox(camX,camY,b.x,b.y,b.w*0.55,b.d*0.55,b.h,'#b8a493','#8d7a68','#7a6a58');
+        ctx.fillStyle='#241e18';
+        ctx.fillRect(s.x-b.w*0.34,s.y-b.h*0.74,b.w*0.44,b.h*0.62);
       } else if(b.kind==='tower'){
         drawWatchtower(camX,camY,b);
       } else { /* city block */
@@ -2031,6 +2130,7 @@ function drawHUD(){
   ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(mx-4,my-4,mm+8,mm+8);
   ctx.fillStyle=M.camp===1?'rgba(40,80,30,0.8)':(M.camp===2?'rgba(40,42,55,0.85)':'rgba(160,130,80,0.8)');
   ctx.fillRect(mx,my,mm,mm);
+  if(M.ocean){ctx.fillStyle='rgba(50,105,160,0.9)';ctx.fillRect(mx,my,M.ocean*s,mm);}
   if(M.river){
     ctx.strokeStyle='#3a85aa'; ctx.lineWidth=3; ctx.beginPath();
     M.river.forEach((p,i)=>{const px=mx+p.x*s,py=my+p.y*s;if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);});
@@ -2114,8 +2214,24 @@ function drawTitleBackdrop(){
   grad.addColorStop(0,'#1c1408'); grad.addColorStop(1,'#3a2c12');
   ctx.fillStyle=grad; ctx.fillRect(0,0,W,H);
 }
+/* riveted gunmetal panel — the hardware look of the game's menus */
+function metalBackdrop(){
+  ctx.fillStyle='#23262b'; ctx.fillRect(0,0,W,H);
+  for(let y=0;y<H;y+=4){
+    ctx.fillStyle=y%8?'rgba(255,255,255,0.012)':'rgba(0,0,0,0.035)';
+    ctx.fillRect(0,y,W,2);
+  }
+  ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=2;
+  for(const y of[110,H-90]){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  for(const x of[100,W-100]){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(const[rx,ry]of[[24,24],[W-24,24],[24,H-24],[W-24,H-24],[W/2,24],[W/2,H-24],[24,H/2],[W-24,H/2]]){
+    ctx.fillStyle='#181a1e'; ctx.beginPath(); ctx.arc(rx,ry,5.5,0,TAU); ctx.fill();
+    ctx.fillStyle='#4a505a'; ctx.beginPath(); ctx.arc(rx,ry,4,0,TAU); ctx.fill();
+    ctx.fillStyle='#6a707c'; ctx.beginPath(); ctx.arc(rx-1,ry-1,1.8,0,TAU); ctx.fill();
+  }
+}
 function drawMenu(){
-  drawTitleBackdrop();
+  metalBackdrop();
   textShadow(W/2,48,"PAUL'S STRIKE",44,'#ffd75e','center');
   const items=menuItems();
   menuIdx=clamp(menuIdx,0,items.length-1);
@@ -2154,7 +2270,7 @@ function drawMenu(){
   }
 }
 function drawPassword(){
-  drawTitleBackdrop();
+  metalBackdrop();
   const {x,y}=centerPanel(520,260);
   textShadow(W/2,y+22,'ENTER PASSWORD',22,'#ffd75e','center');
   textShadow(W/2,y+58,'passwords are given at each mission debrief',11,'#888','center');
@@ -2186,7 +2302,7 @@ function drawPassword(){
   }
 }
 function drawControls(){
-  drawTitleBackdrop();
+  metalBackdrop();
   const {x,y}=centerPanel(700,460);
   textShadow(W/2,y+16,'CONTROLS',22,'#ffd75e','center');
   textShadow(x+40,y+56,'SOLO / PILOT',13,'#7fd77f');
@@ -2217,29 +2333,43 @@ function drawControls(){
   if(input.confirm||input.back){state='menu';sfx('select');}
 }
 function drawChiefSelect(){
-  drawTitleBackdrop();
-  const {x,y}=centerPanel(760,400);
-  textShadow(W/2,y+18,'CHOOSE YOUR CREW CHIEF',24,'#ffd75e','center');
-  textShadow(W/2,y+50,'the Colonel flies co-pilot on every mission — pick who rides in back',11,'#888','center');
-  CHIEFS.forEach((cf,i)=>{
-    const cx=x+40+i*240,sel=i===chiefIdx;
-    ctx.strokeStyle=sel?'#ffd75e':'#4a6330'; ctx.lineWidth=sel?3:2;
-    ctx.strokeRect(cx,y+80,200,220);
-    if(sel){ctx.fillStyle='rgba(255,215,94,0.07)';ctx.fillRect(cx,y+80,200,220);}
-    const port=PORTRAITS[cf.id];
-    ctx.imageSmoothingEnabled=false;
-    ctx.drawImage(port,cx+100-50,y+96,100,115);
-    textShadow(cx+100,y+210,cf.name,13,sel?'#ffd75e':'#fff','center');
-    textShadow(cx+100,y+230,cf.role,11,'#7fd77f','center');
-    textShadow(cx+100,y+252,cf.desc,10,'#bbb','center');
+  metalBackdrop();
+  textShadow(W/2,36,'SELECT CREW CHIEF',30,'#ffd75e','center');
+  textShadow(W/2,76,'THE COLONEL FLIES CO-PILOT ON EVERY MISSION — PICK WHO RIDES IN BACK',11,'#8a8f98','center');
+  const cf=CHIEFS[chiefIdx];
+  /* service photo */
+  ctx.fillStyle='#14161a'; ctx.fillRect(150,128,280,336);
+  ctx.strokeStyle='#4a505a'; ctx.lineWidth=3; ctx.strokeRect(150,128,280,336);
+  ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(PORTRAITS[cf.id],165,146,250,288);
+  ctx.fillStyle='rgba(0,0,0,0.16)';
+  for(let yy=132;yy<458;yy+=6)ctx.fillRect(152,yy,276,2);
+  textShadow(290,475,'‹   '+(chiefIdx+1)+' OF '+CHIEFS.length+'   ›',14,'#8a8f98','center');
+  /* dossier */
+  const dx=505;
+  textShadow(dx,140,'PERSONNEL FILE',12,'#8a8f98');
+  ctx.strokeStyle='#4a505a'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(dx,160); ctx.lineTo(dx+330,160); ctx.stroke();
+  textShadow(dx,172,cf.name,26,'#ffd75e');
+  textShadow(dx,210,'SPECIALTY — '+cf.role,14,'#7fd77f');
+  textShadow(dx,242,cf.desc.toUpperCase(),13,'#e8e8d8');
+  cf.bio.split('\n').forEach((ln,i)=>textShadow(dx,278+i*18,ln.toUpperCase(),11,'#a8adb8'));
+  ['WINCH','GUNNERY','REPAIRS'].forEach((sn,i)=>{
+    const sy=346+i*34;
+    textShadow(dx,sy,sn,12,'#8a8f98');
+    for(let b2=0;b2<5;b2++){
+      ctx.fillStyle=b2<cf.stats[i]?'#7fd77f':'#2c3038';
+      ctx.fillRect(dx+110+b2*30,sy,24,12);
+      ctx.strokeStyle='#14161a'; ctx.strokeRect(dx+110+b2*30,sy,24,12);
+    }
   });
-  textShadow(W/2,y+330,'←/→ SELECT · ENTER TO CONFIRM',13,Math.sin(stTime*3.5)>-0.2?'#fff':'#666','center');
+  textShadow(W/2,H-52,'←/→ REVIEW CANDIDATES · ENTER TO ASSIGN',14,Math.sin(stTime*3.5)>-0.2?'#fff':'#666','center');
   if(input.left){chiefIdx=(chiefIdx+CHIEFS.length-1)%CHIEFS.length;sfx('select');}
   if(input.right){chiefIdx=(chiefIdx+1)%CHIEFS.length;sfx('select');}
   if(input.confirm){G.cp=chiefIdx;state='crew';stTime=0;sfx('confirm');}
 }
 function drawCrew(){
-  drawTitleBackdrop();
+  metalBackdrop();
   const {x,y}=centerPanel(620,380);
   textShadow(W/2,y+20,'FLIGHT CREW',26,'#ffd75e','center');
   ctx.strokeStyle='#4a6330'; ctx.lineWidth=2; ctx.strokeRect(x+40,y+70,250,220);
@@ -2256,22 +2386,83 @@ function drawCrew(){
   textShadow(W/2,y+320,'PRESS ENTER FOR BRIEFING',15,Math.sin(stTime*3.5)>-0.2?'#fff':'#666','center');
   if(input.confirm){enterBriefing();sfx('confirm');}
 }
+let briefPhase=0;
 function enterBriefing(){
   buildMission(G.mi);
-  state='briefing'; briefT=0; stTime=0; setTheme('brief');
+  state='briefing'; briefT=0; briefPhase=0; stTime=0; setTheme('brief');
+}
+/* the classic briefing room: instructor, chalkboard, seated pilots */
+function drawBriefRoom(def){
+  ctx.fillStyle='#08090b'; ctx.fillRect(0,0,W,H);
+  const rx=60,ry=50,rw=420,rh=440;
+  /* room walls */
+  ctx.fillStyle='#2e3236'; ctx.fillRect(rx,ry,rw,rh*0.62);
+  ctx.fillStyle='#232629'; ctx.fillRect(rx,ry+rh*0.62,rw,rh*0.38);
+  ctx.strokeStyle='#17181b'; ctx.lineWidth=2;
+  for(let i=1;i<4;i++){ctx.beginPath();ctx.moveTo(rx,ry+i*36);ctx.lineTo(rx+rw,ry+i*36);ctx.stroke();}
+  ctx.strokeStyle='#101113'; ctx.lineWidth=4; ctx.strokeRect(rx,ry,rw,rh);
+  /* chalkboard */
+  ctx.fillStyle='#101a12'; ctx.fillRect(rx+30,ry+40,210,140);
+  ctx.strokeStyle='#4a4034'; ctx.lineWidth=4; ctx.strokeRect(rx+30,ry+40,210,140);
+  ctx.strokeStyle='rgba(220,225,210,0.75)'; ctx.lineWidth=2;
+  for(let i=0;i<4;i++){
+    const ly=ry+62+i*30;
+    ctx.beginPath(); ctx.moveTo(rx+44,ly+4); ctx.lineTo(rx+48,ly+9); ctx.lineTo(rx+55,ly-2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx+64,ly+3);
+    for(let sx2=0;sx2<120;sx2+=14)ctx.lineTo(rx+64+sx2,ly+3+Math.sin(sx2*0.5+i)*2);
+    ctx.stroke();
+  }
+  /* instructor: camo, cap, pointer */
+  const ix=rx+300,iy=ry+96;
+  ctx.fillStyle='#1c1e16'; ctx.fillRect(ix-12,iy+108,10,44); ctx.fillRect(ix+3,iy+108,10,44);
+  ctx.fillStyle='#4c4a34'; ctx.fillRect(ix-16,iy+28,33,84);
+  ctx.fillStyle='#3a3c28';
+  for(const[px2,py2,w2,h2]of[[ix-12,iy+36,10,8],[ix+2,iy+52,11,9],[ix-8,iy+72,9,8],[ix+4,iy+90,10,7]])ctx.fillRect(px2,py2,w2,h2);
+  ctx.fillStyle='#d8a878'; ctx.fillRect(ix-8,iy,17,22);
+  ctx.fillStyle='#4c4a34'; ctx.fillRect(ix-10,iy-8,21,10);
+  ctx.fillStyle='#3a3c28'; ctx.fillRect(ix-10,iy-2,21,3);
+  ctx.strokeStyle='#d8a878'; ctx.lineWidth=5;
+  ctx.beginPath(); ctx.moveTo(ix-14,iy+40); ctx.lineTo(ix-52,iy+18); ctx.stroke();
+  ctx.strokeStyle='#c8b088'; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.moveTo(ix-52,iy+18); ctx.lineTo(rx+200,ry+80); ctx.stroke();
+  /* seated pilots */
+  for(let r2=0;r2<2;r2++)for(let c2=0;c2<3;c2++){
+    const cx2=rx+70+c2*120-r2*26,cy2=ry+280+r2*74;
+    ctx.fillStyle='#31452c'; ctx.fillRect(cx2,cy2,72,64);
+    ctx.fillStyle='#243620'; ctx.fillRect(cx2,cy2,72,10);
+    ctx.strokeStyle='#141d12'; ctx.lineWidth=2; ctx.strokeRect(cx2,cy2,72,64);
+    if((r2+c2)%2===0){
+      ctx.fillStyle=c2===1?'#3a2c1c':'#1c1c1c';
+      ctx.beginPath(); ctx.arc(cx2+36,cy2-6,13,0,TAU); ctx.fill();
+    }
+  }
+  /* typed directive */
+  textShadow(520,60,'LISTEN UP, PILOT',20,'#d8dc60');
+  let chars=Math.floor(briefT*55),yy=104;
+  ctx.font="bold 14px Consolas,'Courier New',monospace"; ctx.textAlign='left';
+  for(const line of def.brief){
+    if(chars<=0)break;
+    const shown=line.slice(0,chars); chars-=line.length;
+    ctx.fillStyle=line.startsWith('—')?'#7fd77f':'#d8dc60';
+    yy=wrapText(shown.toUpperCase(),520,yy,380,20)+12;
+  }
+  textShadow(W/2,H-38,'PRESS ENTER FOR THE STRIKE MAP',13,Math.sin(stTime*3.5)>-0.2?'#fff':'#666','center');
+  if(input.confirm){briefPhase=1;sfx('confirm');}
 }
 function drawBriefing(){
   const def=MISSIONS[G.mi];
-  drawTitleBackdrop();
   briefT+=gDt;
+  if(briefPhase===0){drawBriefRoom(def);return;}
+  metalBackdrop();
   const {x,y}=centerPanel(800,500);
   textShadow(W/2,y+14,CAMP_NAMES[def.camp],13,'#888','center');
   textShadow(W/2,y+34,'MISSION '+(G.mi+1)+' — '+def.name,24,'#ffd75e','center');
   ctx.strokeStyle='#333'; ctx.beginPath(); ctx.moveTo(x+40,y+72); ctx.lineTo(x+760,y+72); ctx.stroke();
-  /* the strike map — objectives circled, Colonel talks over it */
-  const mm=230,mx=x+530,my=y+92,s=mm/WORLD;
+  /* the strike map — objectives circled */
+  const mm=250,mx=x+60,my=y+92,s=mm/WORLD;
   ctx.fillStyle=M.camp===1?'#24401a':(M.camp===2?'#232530':'#a9895a');
   ctx.fillRect(mx,my,mm,mm);
+  if(M.ocean){ctx.fillStyle='#3a6da0';ctx.fillRect(mx,my,M.ocean*s,mm);}
   ctx.strokeStyle='#111'; ctx.lineWidth=2; ctx.strokeRect(mx,my,mm,mm);
   if(M.river){
     ctx.strokeStyle='#3a85aa'; ctx.lineWidth=4; ctx.beginPath();
@@ -2300,15 +2491,13 @@ function drawBriefing(){
     textShadow(mx+p.x*s,my+p.y*s-5,'?',9,'#8fd4e8','center');
   }
   textShadow(mx+mm/2,my+mm+8,'TACTICAL MAP — STRIKE ZONES',10,'#888','center');
-  /* briefing text, typed */
-  let chars=Math.floor(briefT*55),yy=y+92;
-  ctx.font="13px Consolas,'Courier New',monospace"; ctx.textAlign='left';
-  for(const line of def.brief){
-    if(chars<=0)break;
-    const shown=line.slice(0,chars); chars-=line.length;
-    ctx.fillStyle=line.startsWith('—')?'#7fd77f':'#d8e0c8';
-    yy=wrapText(shown,x+46,yy,440,17)+8;
-  }
+  /* legend beside the map */
+  const lx=x+400;
+  textShadow(lx,y+100,'LEGEND',12,'#8a8f98');
+  ctx.fillStyle='#ff5050'; ctx.fillRect(lx,y+126,8,8);  textShadow(lx+18,y+124,'PRIMARY TARGETS',12,'#ddd');
+  ctx.fillStyle='#8fd4e8'; ctx.fillRect(lx,y+150,8,8);  textShadow(lx+18,y+148,'POW LAST KNOWN POSITION',12,'#ddd');
+  ctx.fillStyle='#5fd75f'; ctx.fillRect(lx,y+174,8,8);  textShadow(lx+18,y+172,M.frigate?'FRIGATE — HOME PAD':'BASE PAD',12,'#ddd');
+  if(M.airfield)textShadow(lx,y+202,'ENEMY AIRFIELD SIGHTED — PARKED JETS ARE BONUS TARGETS',11,'#c8a050');
   textShadow(x+46,y+368,'OBJECTIVES:',13,'#ffd75e');
   def.objectives.forEach((o,i)=>{
     textShadow(x+66,y+388+i*18,'· '+OBJ_LABELS[o[0]]+' ('+o[1]+')',12,'#ddd');
