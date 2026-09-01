@@ -470,7 +470,8 @@ function newSession(mi){
 }
 function saveProgress(){
   saveJSON(SAVE_KEY,{mi:G.mi,lives:G.lives,score:G.score,diff:G.diff,cp:G.cp,perks:G.perks,chk:G.chk,
-    nextLife:G.nextLife,totalKills:G.totalKills,totalRescues:G.totalRescues});
+    nextLife:G.nextLife,totalKills:G.totalKills,totalRescues:G.totalRescues,
+    totShots:G.totShots||0,totHits:G.totHits||0,totDist:G.totDist||0,wUse:G.wUse||{}});
 }
 function makeEnemy(type,x,y,hpMult){
   const base={
@@ -556,9 +557,12 @@ function buildMission(mi){
   const c=def.counts;
   const eliteHp=1+def.camp*0.15; /* later campaigns field hardened units */
   /* two players are stronger than one: co-op fields a heavier garrison */
-  const cnum=n=>settings.coop?Math.ceil(n*1.3):n;
+  /* co-op fields a heavier garrison — except boss phases, whose fixed defenses already stack */
+  const cnum=n=>settings.coop&&!def.boss?Math.ceil(n*1.3):n;
+  /* Easy goes gentler on Midnight City's flak nests; Normal/Hard stay authentic */
+  const soften=(t,n)=>(G.diff==='easy'&&def.camp===2&&(t==='aa'||t==='rpg'))?Math.max(2,n-2):n;
   for(const t of['radar','tank','aa','sam','rpg','mob','barracks']){
-    const nSpawn=(t==='radar'||t==='barracks')?(c[t]||0):cnum(c[t]||0);
+    const nSpawn=(t==='radar'||t==='barracks')?(c[t]||0):cnum(soften(t,c[t]||0));
     for(let i=0;i<nSpawn;i++){const p=place(t==='rpg'?90:150);M.enemies.push(makeEnemy(t,p.x,p.y,d.hp*eliteHp));}
   }
   for(let i=0;i<cnum(c.heli||0);i++){const p=place(300);const e=makeEnemy('heli',p.x,p.y,d.hp*eliteHp);e.z=52;M.enemies.push(e);}
@@ -694,7 +698,7 @@ function buildMission(mi){
   const amt=d.amt;
   for(let i=0;i<Math.round(6*amt);i++){const p=place(200);M.pickups.push({type:'fuel',x:p.x,y:p.y});}
   for(let i=0;i<Math.round(5*amt);i++){const p=place(200);M.pickups.push({type:'ammo',x:p.x,y:p.y});}
-  for(let i=0;i<Math.round(4*amt);i++){const p=place(200);M.pickups.push({type:'armor',x:p.x,y:p.y});}
+  for(let i=0;i<Math.round(4*amt)+(G.diff==='easy'&&def.camp===2?1:0);i++){const p=place(200);M.pickups.push({type:'armor',x:p.x,y:p.y});}
   M.ch=freshChopper();
   const c0=P(M.ch.x,M.ch.y);
   M.cam.x=c0.x-W/2; M.cam.y=c0.y-H/2;
@@ -770,7 +774,9 @@ function drawScores(){
     textShadow(W/2+70,y2+2,e2.r||'',11,'#7fd77f');
     textShadow(W/2+260,y2+2,e2.d||'',11,'#8a8f98','right');
   });
-  textShadow(W/2,H-50,'PRESS ENTER',13,Math.sin(stTime*3.5)>-0.2?'#fff':'#666','center');
+  textShadow(W/2,H-78,'BAR TALK: "one of the old-timers found a quiet spot off the coast...',10,'#4a505a','center');
+  textShadow(W/2,H-64,'said the title screen remembers — up, up, down, down, left, right."',10,'#4a505a','center');
+  textShadow(W/2,H-40,'PRESS ENTER',13,Math.sin(stTime*3.5)>-0.2?'#fff':'#666','center');
   if(input.confirm&&stTime>0.5){
     state=afterScores; stTime=0; sfx('confirm');
     if(state==='title')setTheme('title');
@@ -832,6 +838,7 @@ function fireWeapon(){
   const ch=M.ch,w=WEAPONS[ch.weapon],key=['gun','hydra','hellfire'][ch.weapon];
   if(ch.cd>0||ch.ammo[key]<=0)return;
   ch.cd=w.rate; ch.ammo[key]--; M.shots++;
+  M.wUse=M.wUse||{}; M.wUse[key]=(M.wUse[key]||0)+1;
   let aim=aimAngle();
   /* forgiving auto-aim, like the original: snap to a target near the crosshair line */
   let snap=null,snapD=1e9;
@@ -998,9 +1005,10 @@ function spawnPhase(def){
     }
     return{x:minX+rng()*(WORLD-minX-250),y:250+rng()*(WORLD-500)};
   }
-  const cnum=n=>settings.coop?Math.ceil(n*1.3):n;
+  const cnum=n=>settings.coop&&!def.boss?Math.ceil(n*1.3):n;
+  const soften=(t,n)=>(G.diff==='easy'&&def.camp===2&&(t==='aa'||t==='rpg'))?Math.max(2,n-2):n;
   for(const t of['radar','tank','aa','sam','rpg','mob','barracks']){
-    const nSpawn=(t==='radar'||t==='barracks')?(c[t]||0):cnum(c[t]||0);
+    const nSpawn=(t==='radar'||t==='barracks')?(c[t]||0):cnum(soften(t,c[t]||0));
     for(let i=0;i<nSpawn;i++){const p=pplace();M.enemies.push(makeEnemy(t,p.x,p.y,d.hp*eliteHp));}
   }
   for(let i=0;i<cnum(c.heli||0);i++){const p=pplace();const e=makeEnemy('heli',p.x,p.y,d.hp*eliteHp);e.z=52;M.enemies.push(e);}
@@ -1031,7 +1039,7 @@ function spawnPhase(def){
   const amt=d.amt;
   for(let i=0;i<Math.round(3*amt);i++){const p=pplace();M.pickups.push({type:'fuel',x:p.x,y:p.y});}
   for(let i=0;i<Math.round(3*amt);i++){const p=pplace();M.pickups.push({type:'ammo',x:p.x,y:p.y});}
-  for(let i=0;i<Math.round(2*amt);i++){const p=pplace();M.pickups.push({type:'armor',x:p.x,y:p.y});}
+  for(let i=0;i<Math.round(2*amt)+(G.diff==='easy'&&def.camp===2?1:0);i++){const p=pplace();M.pickups.push({type:'armor',x:p.x,y:p.y});}
 }
 function addScore(n){
   G.score+=n;
@@ -1296,6 +1304,10 @@ function loseLife(){
 }
 function missionComplete(){
   rotorOn(false,0);
+  /* fold this theater's numbers into the career log for the final tally */
+  G.totShots=(G.totShots||0)+M.shots; G.totHits=(G.totHits||0)+M.hits;
+  G.totDist=(G.totDist||0)+M.distF;
+  G.wUse=G.wUse||{}; for(const k in (M.wUse||{}))G.wUse[k]=(G.wUse[k]||0)+M.wUse[k];
   state='debrief'; stTime=0; sfx('confirm'); setTheme('win');
 }
 
@@ -4048,7 +4060,8 @@ function drawMenu(){
     else if(it.id==='continue'){
       const s=loadJSON(SAVE_KEY);
       if(s){G={diff:s.diff,mi:s.mi,lives:Math.max(s.lives,DIFF[s.diff].lives),score:s.score,nextLife:s.nextLife||10000,
-        totalKills:s.totalKills||0,totalRescues:s.totalRescues||0,cp:s.cp||0,perks:s.perks||basePerks(),chk:s.chk||null};
+        totalKills:s.totalKills||0,totalRescues:s.totalRescues||0,cp:s.cp||0,perks:s.perks||basePerks(),chk:s.chk||null,
+        totShots:s.totShots||0,totHits:s.totHits||0,totDist:s.totDist||0,wUse:s.wUse||{}};
         settings.diff=s.diff; enterBriefing();}
     }
     else if(it.id==='password'){state='password';pwBuf='';pwMsg='';stTime=0;}
@@ -4577,6 +4590,13 @@ function drawVictory(){
     ctx.globalAlpha=a;
     textShadow(W/2,H*0.60,'MISSION ACCOMPLISHED',30,'#ffd75e','center');
     textShadow(W/2,H*0.60+44,'FINAL SCORE '+fmt(G.score)+'   ·   KILLS '+G.totalKills+'   ·   RESCUES '+G.totalRescues,13,'#e8e8d8','center');
+    { /* career tally across all four theaters */
+      const acc=G.totShots?Math.round((G.totHits||0)/G.totShots*100):0;
+      const wu=G.wUse||{},wNames={gun:'CHAIN GUN',hydra:'HYDRA',hellfire:'HELLFIRE'};
+      let fav='CHAIN GUN',fc=-1;
+      for(const k in wu)if(wu[k]>fc){fc=wu[k];fav=wNames[k]||k;}
+      textShadow(W/2,H*0.60+64,'ACCURACY '+acc+'%   ·   FAVORITE WEAPON: '+fav+'   ·   '+((G.totDist||0)/1000).toFixed(1)+' KM FLOWN',12,'#c8c8b8','center');
+    }
     if(tributeImg){
       const iw=110,ih=iw*tributeImg.height/tributeImg.width;
       ctx.save(); ctx.translate(W*0.82,H*0.40); ctx.rotate(-0.03);
