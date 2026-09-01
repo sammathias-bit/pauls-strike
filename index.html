@@ -324,7 +324,7 @@ const OBJ_LABELS={radar:'DESTROY RADAR SITES',aa:'DESTROY AA BATTERIES',tank:'DE
   bossC:'DESTROY THE IRON CITADEL',bossB:'SINK THE RIVER LEVIATHAN',bossG:'SHOOT DOWN THE GHOST WING'};
 const MISSIONS=[
  {camp:0,name:'FIRST LIGHT',seed:1101,light:'day',weather:null,
-  counts:{radar:4,tank:4,aa:3,sam:0,rpg:6,heli:0,mob:0,barracks:0,boatp:0,pow:3},
+  counts:{radar:4,tank:3,aa:2,sam:0,rpg:4,heli:0,mob:0,barracks:0,boatp:0,pow:3},
   objectives:[['radar',4],['pow',3]],
   brief:["Paul. Enemy radar has our flyboys blind across the whole sector.",
          "Four radar sites. Find them. Flatten them.",
@@ -583,7 +583,7 @@ function buildMission(mi){
   const amt=d.amt;
   for(let i=0;i<Math.round(6*amt);i++){const p=place(200);M.pickups.push({type:'fuel',x:p.x,y:p.y});}
   for(let i=0;i<Math.round(5*amt);i++){const p=place(200);M.pickups.push({type:'ammo',x:p.x,y:p.y});}
-  for(let i=0;i<Math.round(3*amt);i++){const p=place(200);M.pickups.push({type:'armor',x:p.x,y:p.y});}
+  for(let i=0;i<Math.round(4*amt);i++){const p=place(200);M.pickups.push({type:'armor',x:p.x,y:p.y});}
   M.ch=freshChopper();
   const c0=P(M.ch.x,M.ch.y);
   M.cam.x=c0.x-W/2; M.cam.y=c0.y-H/2;
@@ -646,7 +646,7 @@ function updateRadio(dt){
 
 /* ---------------- weapons ---------------- */
 const WEAPONS=[
-  {name:'GUN',rate:0.115,dmg:6,spd:720,spread:0.05},
+  {name:'GUN',rate:0.115,dmg:7,spd:720,spread:0.05},
   {name:'HYDRA',rate:0.33,dmg:30,spd:540,spread:0.02},
   {name:'HELLFIRE',rate:1.0,dmg:120,spd:430,spread:0}
 ];
@@ -655,7 +655,17 @@ function fireWeapon(){
   const ch=M.ch,w=WEAPONS[ch.weapon],key=['gun','hydra','hellfire'][ch.weapon];
   if(ch.cd>0||ch.ammo[key]<=0)return;
   ch.cd=w.rate; ch.ammo[key]--; M.shots++;
-  const aim=aimAngle();
+  let aim=aimAngle();
+  /* forgiving auto-aim, like the original: snap to a target near the crosshair line */
+  let snap=null,snapD=1e9;
+  for(const e of M.enemies){
+    if(e.dead)continue;
+    const d0=dist(ch.x,ch.y,e.x,e.y);
+    if(d0>780)continue;
+    const off=Math.abs(angTo(aim,Math.atan2(e.y-ch.y,e.x-ch.x)));
+    if(off<0.22&&d0<snapD){snapD=d0;snap=e;}
+  }
+  if(snap)aim=Math.atan2(snap.y-ch.y,snap.x-ch.x);
   const a=aim+(Math.random()*2-1)*w.spread;
   let dmg=w.dmg;
   if(key==='gun'&&chief().gunDmg)dmg*=chief().gunDmg;
@@ -680,16 +690,16 @@ function enemyShoot(e,kind){
   const ch=M.ch,d=DIFF[G.diff];
   const a=Math.atan2(ch.y-e.y,ch.x-e.x);
   if(kind==='shell'){
-    M.projectiles.push({x:e.x,y:e.y,vx:Math.cos(a)*240,vy:Math.sin(a)*240,dmg:12*d.dmg,from:'enemy',kind:'shell',life:3,z:20});
+    M.projectiles.push({x:e.x,y:e.y,vx:Math.cos(a)*240,vy:Math.sin(a)*240,dmg:10*d.dmg,from:'enemy',kind:'shell',life:3,z:20});
     sfx('clank');
   } else if(kind==='bullet'){
     const sp=460,a2=a+(Math.random()*2-1)*0.08;
-    M.projectiles.push({x:e.x,y:e.y,vx:Math.cos(a2)*sp,vy:Math.sin(a2)*sp,dmg:3.5*d.dmg,from:'enemy',kind:'bullet',life:1.6,z:e.z||30});
+    M.projectiles.push({x:e.x,y:e.y,vx:Math.cos(a2)*sp,vy:Math.sin(a2)*sp,dmg:3*d.dmg,from:'enemy',kind:'bullet',life:1.6,z:e.z||30});
   } else if(kind==='missile'){
     M.projectiles.push({x:e.x,y:e.y,vx:Math.cos(a)*180,vy:Math.sin(a)*180,dmg:20*d.dmg,from:'enemy',kind:'missile',life:5,homing:true,z:e.z||40});
     sfx('lock'); say("MISSILE LOCK! Jink, Paul, JINK!");
   } else if(kind==='rocket'){
-    M.projectiles.push({x:e.x,y:e.y,vx:Math.cos(a)*200,vy:Math.sin(a)*200,dmg:10*d.dmg,from:'enemy',kind:'rocket',life:2.5,z:30});
+    M.projectiles.push({x:e.x,y:e.y,vx:Math.cos(a)*200,vy:Math.sin(a)*200,dmg:8*d.dmg,from:'enemy',kind:'rocket',life:2.5,z:30});
   }
 }
 
@@ -799,6 +809,8 @@ function updateChopper(dt){
   if(ch.fuel<=25&&M.fuelWarn<1){M.fuelWarn=1;say("Fuel at 25 percent. Find a barrel or get to the pad, NOW.");sfx('warn');}
   if(ch.fuel<=10&&M.fuelWarn<2){M.fuelWarn=2;say("FUEL CRITICAL, PAUL! She'll drop out of the sky!");}
   if(ch.fuel<=10){M.lowBeep-=dt;if(M.lowBeep<=0){M.lowBeep=1.2;sfx('warn');}}
+  if(ch.armor<=35&&!M.armorWarn){M.armorWarn=true;say("You're taking heavy fire, Paul! Find an armor crate or get back to the pad!");sfx('warn');}
+  if(ch.armor>50)M.armorWarn=false;
   if(ch.fuel<=0){ch.fuel=0;crashChopper('fuel');return;}
   if(input.cycle){ch.weapon=(ch.weapon+1)%3;sfx('select');}
   if(input.w1)ch.weapon=0; if(input.w2)ch.weapon=1; if(input.w3)ch.weapon=2;
@@ -834,6 +846,10 @@ function updateChopper(dt){
   }
   if(input.winch){
     if(overPad&&M.allDone&&sp<110){missionComplete();return;}
+    if(overPad&&!M.allDone&&sp<110&&!M.padHinted){
+      M.padHinted=true;
+      say("We're not done yet, son — check the objectives on your map. Come back when the job's finished.");
+    }
     if(!ch.winch){
       let best=null,bd=55;
       for(const p of M.pows){
@@ -899,7 +915,7 @@ function updateEnemies(dt){
       case 'tank':
         if(dp<380){
           e.turAng=angLerp(e.turAng,Math.atan2(ch.y-e.y,ch.x-e.x),2.5*dt);
-          if(e.cd<=0){e.cd=2.3;enemyShoot(e,'shell');}
+          if(e.cd<=0){e.cd=2.6;enemyShoot(e,'shell');}
         } else {
           if(dist(e.x,e.y,e.wx,e.wy)<20){e.wx=clamp(e.x+(Math.random()*2-1)*400,100,WORLD-100);e.wy=clamp(e.y+(Math.random()*2-1)*400,100,WORLD-100);}
           const a=Math.atan2(e.wy-e.y,e.wx-e.x);
@@ -911,7 +927,7 @@ function updateEnemies(dt){
       case 'aa':
         if(dp<(M.powerDown?340:430)){
           e.turAng=Math.atan2(ch.y-e.y,ch.x-e.x);
-          if(e.cd<=0){e.burst=3;e.cd=2.0;}
+          if(e.cd<=0){e.burst=3;e.cd=2.4;}
           if(e.burst>0&&(e.bcd=(e.bcd||0)-dt)<=0){e.bcd=0.12;e.burst--;enemyShoot(e,'bullet');}
         }
         break;
@@ -3044,7 +3060,7 @@ function drawPaused(){
 /* ---------------- main loop ---------------- */
 let last=performance.now(),lastTick=performance.now(),gDt=0.016;
 function frame(now){
-  const dt=Math.min(0.05,(now-last)/1000); last=now; gDt=dt;
+  const dt=clamp((now-last)/1000,0,0.05); last=now; gDt=dt;
   ctx=mctx;PS=1;
   setT(1,0,0,1,0,0);
   pollInput();
