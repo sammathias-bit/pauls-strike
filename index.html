@@ -4691,6 +4691,8 @@ function frame(now){
   endFrameInput();
 }
 function tick(){lastTick=performance.now();try{frame(lastTick);}catch(e){console.error(e);}}
+/* direct door to the special delivery: open the game with #bench (or ?bench) in the URL */
+try{if(/[?#]bench/i.test(location.href)){startSecret();}}catch(e){}
 (function raf(){tick();requestAnimationFrame(raf);})();
 /* watchdog: keep the game running even if requestAnimationFrame is throttled */
 setInterval(()=>{if(performance.now()-lastTick>60)tick();},33);
