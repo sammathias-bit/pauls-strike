@@ -1601,6 +1601,14 @@ function updateGame(dt){
   for(const pw2 of M.pows)if(pw2.duck>0)pw2.duck-=dt;
   if(M.ffWarn>0)M.ffWarn-=dt;
   if(M.rescue)M.rescue.t+=dt;
+  /* under the lights, the Colonel delivers what he was asked to carry */
+  if(M.aurora&&!M.dadSaid&&M.time>24){
+    M.dadSaid=true;
+    say("Your old man asked me to tell you something, if you ever made it up here.");
+    say("\"Steady on the stick, son. I've got your six — always have, always will.\"");
+    say("\"You are everything I hoped to raise and more than I ever earned. I am proud of you, son — today, and every day after.\"");
+    say("...He made me memorize it, Paul. Word for word.");
+  }
   /* the wingman — on the quiet flights, another bird falls in alongside. no words needed. */
   if(M.secret&&M.ch.alive){
     if(!M.wing&&!M.wingDone&&M.time>7)M.wing={x:M.ch.x-380,y:M.ch.y+380,z:86,ang:M.ch.heading,rotorT:Math.random()*9,st:'form',pt:0};
@@ -4691,6 +4699,14 @@ function drawVictory(){
       ctx.drawImage(tributeImg,-iw/2,-ih/2,iw,ih);
       ctx.restore();
     }
+    ctx.globalAlpha=1;
+  }
+  if(t>15.5){ /* his father's words, kept word for word */
+    const aq=clamp((t-15.5)/2,0,1);
+    ctx.globalAlpha=aq;
+    textShadow(W/2,H-152,'"Steady on the stick, son. I\'ve got your six — always have, always will."',12,'#c8d8b8','center');
+    textShadow(W/2,H-134,'"You are everything I hoped to raise and more than I ever earned."',12,'#c8d8b8','center');
+    textShadow(W/2,H-116,'"I am proud of you, son — today, and every day after."  — DAD',12,'#8fd4a8','center');
     ctx.globalAlpha=1;
   }
   if(t>14.5){
