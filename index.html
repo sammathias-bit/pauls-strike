@@ -67,7 +67,7 @@ const SAVE_KEY='pauls-strike-save-v2', SET_KEY='pauls-strike-settings-v2';
 function loadJSON(k){try{const s=localStorage.getItem(k);return s?JSON.parse(s):null;}catch(e){return null;}}
 function saveJSON(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 function clearSave(){try{localStorage.removeItem(SAVE_KEY);}catch(e){}}
-const settings=Object.assign({crt:true,sound:true,diff:'normal',coop:false,pixel:true,mmusic:false},loadJSON(SET_KEY)||{});
+const settings=Object.assign({crt:true,sound:true,diff:'normal',coop:false,pixel:true,mmusic:false,classic:false},loadJSON(SET_KEY)||{});
 function saveSettings(){saveJSON(SET_KEY,settings);}
 function applyCrt(){document.body.classList.toggle('crt-on',!!settings.crt);}
 applyCrt();
@@ -453,9 +453,18 @@ const MISSIONS=[
          "Turrets first, core second. You know the drill better than anyone alive.",
          "Two POWs first — nobody stays behind on the ice.",
          "Whatever happens up there... it has been everything to fly with you, son. Everything.",
+         "— THE COLONEL"]},
+ /* index 12 — the off-the-books special operation, reachable only from the veteran menu */
+ {camp:4,name:'BLACK GOLD',seed:7411,light:'dusk',weather:null,
+  counts:{radar:0,tank:5,aa:4,sam:2,rpg:6,heli:1,mob:1,barracks:3,boatp:0,pow:3},
+  objectives:[['depot',3],['tank',5],['pow',3]],
+  brief:["Off the books, Paul. The oil field at dawn — it bankrolled everything we just tore down.",
+         "Three fuel depots keep it pumping. Flatten them, burn the armor, and pull our three scouts out.",
+         "The whole field is one spark from going up. Watch the flare stacks and fly like you mean it.",
+         "One sortie. No reinforcements. Just like old times.",
          "— THE COLONEL"]}
 ];
-const CAMP_NAMES=['CAMPAIGN I — DESERT STORM','CAMPAIGN II — GREEN INFERNO','CAMPAIGN III — MIDNIGHT CITY','CAMPAIGN IV — WHITEOUT'];
+const CAMP_NAMES=['CAMPAIGN I — DESERT STORM','CAMPAIGN II — GREEN INFERNO','CAMPAIGN III — MIDNIGHT CITY','CAMPAIGN IV — WHITEOUT','SPECIAL OPERATION'];
 const CAMP_INTROS={
   3:{sub:'CAMPAIGN II',title:'GREEN INFERNO',quote:'"New jungle, same team. You and me, Paul."',c1:'#0a1a08',c2:'#1e3d14'},
   6:{sub:'CAMPAIGN III',title:'MIDNIGHT CITY',quote:'"Night flying, Paul. Trust your instruments — and trust me."',c1:'#05060f',c2:'#141a33'},
@@ -505,6 +514,7 @@ function buildMission(mi){
     gunAng:-Math.PI/2,
     ch:null};
   M.ocean=ocean;
+  if(mi===12)M.specialOp=true;
   if(ocean)M.frigate={x:212,y:640};
   const jungle=def.camp===1,city=def.camp===2,arctic=def.camp===3;
   if(jungle){
@@ -673,7 +683,8 @@ function buildMission(mi){
   }
   /* landmark props: mesas, oil derricks, crashed aircraft */
   if(!city){
-    for(let i=0;i<(jungle?0:4);i++){const p=place(220);M.props.push({kind:'derrick',x:p.x,y:p.y,t:rng()*10});}
+    for(let i=0;i<(jungle?0:(def.camp===4?14:4));i++){const p=place(220);M.props.push({kind:'derrick',x:p.x,y:p.y,t:rng()*10});}
+    if(def.camp===4)for(let i=0;i<6;i++){const p=place(260);M.props.push({kind:'flare',x:p.x,y:p.y,t:rng()*10});}
     for(let i=0;i<5;i++){const p=place(280);M.props.push({kind:'mesa',x:p.x,y:p.y,w:60+rng()*70,d:50+rng()*50,h:24+rng()*20});}
     for(let i=0;i<(jungle?1:2);i++){const p=place(320);M.props.push({kind:'wreck',x:p.x,y:p.y,a:rng()*TAU});}
   }
@@ -962,9 +973,9 @@ function objCredit(id){
 }
 function lastOfCampaign(mi){return mi%3===2;}
 function checkObjectives(){
-  if(M.allDone||M.secret)return;
+  if(M.allDone||M.secret||M.lastStand)return;
   if(M.objectives.every(o=>o.done>=o.need)){
-    if(lastOfCampaign(G.mi)){
+    if(lastOfCampaign(G.mi)||M.specialOp){
       M.allDone=true;
       say("That's everything, Paul! Campaign objectives complete. Bring her home — hover the pad and press E to set down.");
     } else {
@@ -1095,7 +1106,20 @@ function updateChopper(dt){
   const ch=M.ch,d=DIFF[G.diff],cf=chief();
   if(!ch.alive)return;
   const mag=Math.hypot(input.mx,input.my);
-  if(mag>0.05){
+  if(settings.classic&&mag>0.05){
+    /* classic rotate: left/right pivot the nose in place, up thrusts, down backpedals */
+    if(input.strafe){ /* SHIFT still crabs: slide relative to the nose, heading fixed */
+      const fw=-input.my,sd=input.mx;
+      ch.vx+=(Math.cos(ch.heading)*fw+Math.cos(ch.heading+Math.PI/2)*sd)*560*dt;
+      ch.vy+=(Math.sin(ch.heading)*fw+Math.sin(ch.heading+Math.PI/2)*sd)*560*dt;
+    } else {
+      ch.heading+=input.mx*2.7*dt;
+      if(Math.abs(input.my)>0.05){
+        ch.vx+=Math.cos(ch.heading)*560*(-input.my)*dt;
+        ch.vy+=Math.sin(ch.heading)*560*(-input.my)*dt;
+      }
+    }
+  } else if(mag>0.05){
     const wd=screenDirToWorld(input.mx,input.my);
     const na=Math.atan2(wd.y,wd.x);
     if(!input.strafe)ch.heading=angLerp(ch.heading,na,clamp(6*dt,0,1)); /* SHIFT: strafe lock — nose stays on target */
@@ -1294,6 +1318,7 @@ function crashChopper(why){
 }
 function loseLife(){
   G.lives--;
+  M.deathsC=(M.deathsC||0)+1;
   M.rescue=null;
   for(const p of M.pows){if(p.state==='aboard'||p.state==='winching'){p.state='wait';p.x=p.hx;p.y=p.hy;p.z=0;}}
   if(G.lives<=0){
@@ -1309,6 +1334,16 @@ function missionComplete(){
   G.totShots=(G.totShots||0)+M.shots; G.totHits=(G.totHits||0)+M.hits;
   G.totDist=(G.totDist||0)+M.distF;
   G.wUse=G.wUse||{}; for(const k in (M.wUse||{}))G.wUse[k]=(G.wUse[k]||0)+M.wUse[k];
+  /* campaign wings: bronze for the clear, silver and gold for flying it clean */
+  if(!M.secret&&!M.specialOp&&lastOfCampaign(G.mi)){
+    const acc=M.shots?M.hits/M.shots:0;
+    let med='b';
+    if(M.time<1200&&(M.deathsC||0)<=2)med='s';
+    if(M.time<720&&!(M.deathsC||0)&&acc>=0.45)med='g';
+    const meds=loadJSON('pauls-strike-medals')||{},rank={b:1,s:2,g:3};
+    if(!meds[M.camp]||rank[med]>rank[meds[M.camp]]){meds[M.camp]=med;saveJSON('pauls-strike-medals',meds);M.medalNew=true;}
+    M.medalGot=med;
+  }
   state='debrief'; stTime=0; sfx('confirm'); setTheme('win');
 }
 
@@ -1601,6 +1636,7 @@ function updateGame(dt){
   for(const pw2 of M.pows)if(pw2.duck>0)pw2.duck-=dt;
   if(M.ffWarn>0)M.ffWarn-=dt;
   if(M.rescue)M.rescue.t+=dt;
+  if(M.lastStand)updateLastStand(dt);
   /* under the lights, the Colonel delivers what he was asked to carry */
   if(M.aurora&&!M.dadSaid&&M.time>24){
     M.dadSaid=true;
@@ -2201,7 +2237,8 @@ const TERRAIN={
   0:{void:'#6b5430',ground:'#d2b070',border:'#8a6f3c',p1:'rgba(220,190,120,0.28)',p2:'rgba(170,134,76,0.22)',rock:'#8a7350'},
   1:{void:'#16260f',ground:'#2e4d20',border:'#1c3013',p1:'rgba(40,80,30,0.3)',p2:'rgba(70,110,45,0.22)',rock:'#4a5c40'},
   2:{void:'#101018',ground:'#33343e',border:'#22222c',p1:'rgba(28,28,36,0.35)',p2:'rgba(58,58,70,0.3)',rock:'#4a4a55'},
-  3:{void:'#5a6a76',ground:'#dfe6ea',border:'#a8b4bc',p1:'rgba(200,214,224,0.4)',p2:'rgba(168,186,198,0.35)',rock:'#8a98a2'}
+  3:{void:'#5a6a76',ground:'#dfe6ea',border:'#a8b4bc',p1:'rgba(200,214,224,0.4)',p2:'rgba(168,186,198,0.35)',rock:'#8a98a2'},
+  4:{void:'#241c14',ground:'#6a5a44',border:'#3a3026',p1:'rgba(40,32,24,0.35)',p2:'rgba(110,92,66,0.25)',rock:'#5a4c3c'}
 };
 /* dense speckled ground texture — sand grain, pebbles, scrub tufts */
 function makeTerrainTex(camp,rng){
@@ -2220,7 +2257,23 @@ function makeTerrainTex(camp,rng){
   const tones=camp===0?['#c9a562','#dcbc80','#c29e60','#b69254','#e2c68e','#cdaa6c']:
     camp===1?['#28451c','#356024','#1f3a16','#2e5522','#24401a','#316028']:
     camp===2?['#34353f','#3f4049','#2c2d36','#44454f','#383944']:
+    camp===4?['#6a5a44','#7a6850','#5a4c38','#847258','#4e4234','#71604a']:
     ['#d2dce2','#eaf0f4','#c4d2da','#b6c6d0','#f2f6f8','#cddae0'];
+  /* oil field: slicks soaked into cracked dry earth */
+  if(camp===4){
+    for(let i=0;i<12;i++){
+      g.fillStyle='rgba(20,16,12,0.5)';
+      g.beginPath(); g.ellipse(rng()*S2,rng()*S2,8+rng()*22,5+rng()*10,rng()*3,0,TAU); g.fill();
+    }
+    g.strokeStyle='rgba(30,24,18,0.45)'; g.lineWidth=1.2;
+    for(let i=0;i<20;i++){
+      const x0=rng()*S2,y0=rng()*S2;
+      g.beginPath(); g.moveTo(x0,y0);
+      g.lineTo(x0+10+rng()*20,y0+(rng()*2-1)*14);
+      g.lineTo(x0+30+rng()*30,y0+(rng()*2-1)*20);
+      g.stroke();
+    }
+  }
   /* arctic: wind-scoured drifts & pale blue ice sheets */
   if(camp===3){
     for(let i=0;i<16;i++){
@@ -2870,6 +2923,21 @@ function drawUprightPass(shX,shY){
         ctx.closePath(); ctx.fill();
         ctx.fillStyle='#e8e4d8';
         ctx.fillRect(s.x+7,s.y-37+wv*0.35,5,7);
+      } else if(pr.kind==='flare'){
+        /* gas flare stack: steel pole, restless flame, warm glow */
+        ctx.strokeStyle='#4a4640'; ctx.lineWidth=3;
+        ctx.beginPath(); ctx.moveTo(s.x,s.y); ctx.lineTo(s.x,s.y-46); ctx.stroke();
+        ctx.strokeStyle='#332f2a'; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.moveTo(s.x-8,s.y); ctx.lineTo(s.x,s.y-24); ctx.moveTo(s.x+8,s.y); ctx.lineTo(s.x,s.y-24); ctx.stroke();
+        const fl=Math.sin(M.time*11+pr.t)*3,fl2=Math.sin(M.time*7+pr.t*2)*2;
+        ctx.fillStyle='rgba(255,150,50,0.18)';
+        ctx.beginPath(); ctx.arc(s.x,s.y-52,15+fl2,0,TAU); ctx.fill();
+        ctx.fillStyle='#ff8c2e';
+        ctx.beginPath(); ctx.moveTo(s.x-4,s.y-46); ctx.lineTo(s.x+fl2,s.y-60-fl); ctx.lineTo(s.x+4,s.y-46); ctx.closePath(); ctx.fill();
+        ctx.fillStyle='#ffd050';
+        ctx.beginPath(); ctx.moveTo(s.x-2,s.y-46); ctx.lineTo(s.x+fl2*0.6,s.y-55-fl*0.6); ctx.lineTo(s.x+2,s.y-46); ctx.closePath(); ctx.fill();
+        if(Math.random()<0.05)M.effects.push({x:pr.x,y:pr.y,z:56,vx:8+Math.random()*6,vy:(Math.random()*2-1)*5,vz:20,
+          life:1.6,max:1.8,size:4,color:'rgba(40,36,32,0.4)',smoke:true});
       } else if(pr.kind==='flag'){
         ctx.strokeStyle='#3a342a'; ctx.lineWidth=2;
         ctx.beginPath(); ctx.moveTo(s.x,s.y); ctx.lineTo(s.x,s.y-34); ctx.stroke();
@@ -3697,7 +3765,12 @@ function drawHUD(){
   textShadow(712,22,'× '+G.lives,16,'#fff');
   textShadow(W-16,7,'SCORE',12,'#bbb','right');
   textShadow(W-16,22,fmt(G.score),15,'#fff','right');
-  if(M.secret){
+  if(M.lastStand){
+    ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(W-250,60,236,62);
+    textShadow(W-240,66,'LAST STAND — WAVE '+M.wave,12,'#ff8050');
+    textShadow(W-240,84,'HOSTILES: '+M.enemies.filter(e=>!e.dead).length,11,'#ddd');
+    textShadow(W-240,100,'NEXT WAVE: '+Math.max(0,M.waveT|0)+'s',11,'#8a8f98');
+  } else if(M.secret){
     ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(W-250,60,236,44);
     if(M.aurora){
       textShadow(W-240,66,'NORTHERN LIGHTS',11,'#8fd4e8');
@@ -3848,7 +3921,7 @@ function drawGame(){
 
 /* ---------------- screens ---------------- */
 let state='title',stTime=0;
-let menuIdx=0,pauseIdx=0,briefT=0,chiefIdx=0,pwBuf='',pwMsg='',replayIdx=0;
+let menuIdx=0,pauseIdx=0,briefT=0,chiefIdx=0,pwBuf='',pwMsg='',replayIdx=0,lastIdx=0;
 function centerPanel(w2,h2){
   const x=(W-w2)/2,y=(H-h2)/2;
   ctx.fillStyle='rgba(0,0,0,0.78)'; ctx.fillRect(x,y,w2,h2);
@@ -3939,6 +4012,51 @@ function startAurora(){
   say("No tasking tonight, son. The lights are out over the ice — figured you two should see them.");
   say("No clock. No fuel gauge. Take her wherever you like. We've got all night.");
   state='game'; stTime=0; setTheme(null);
+}
+/* ============ LAST STAND — one bird, endless waves ============ */
+function startLastStand(camp){
+  newSession(camp*3);
+  G.lives=1;
+  if(camp>=1)G.perks.armor=15;
+  if(camp>=2){G.perks.winchM=0.8;G.perks.cap=1;G.perks.gun=150;G.perks.hydra=8;G.perks.hf=2;}
+  buildMission(camp*3);
+  M.lastStand=true; M.wave=0; M.waveT=6;
+  M.objectives=[]; M.pows=[]; M.civs=[];
+  M.enemies.length=0;                 /* the waves are the enemy */
+  M.deployed=true; M.ch=freshChopper();
+  M.radio.queue=[]; M.radio.cur=null;
+  say("Last stand, Paul. One bird, no cavalry. They keep coming until they stop.");
+  say("Supplies drop with every wave. Make every shot count — the Hall of Pilots is watching.");
+  state='game'; stTime=0; setTheme(null);
+}
+function updateLastStand(dt){
+  if(!M.ch.alive)return;
+  M.waveT-=dt;
+  const alive=M.enemies.filter(e=>!e.dead).length;
+  if(M.waveT<=0||alive===0){
+    M.wave++; M.waveT=26;
+    if(M.wave>1)addScore(M.wave*150);
+    const d=DIFF[G.diff];
+    const n=2+Math.min(10,M.wave);
+    const pool=['rpg','tank','rpg','aa','heli','sam','mob'];
+    const minX=(M.ocean||0)+150;
+    const drop=(type)=>{M.pickups.push({type,
+      x:clamp(M.ch.x+(Math.random()*2-1)*420,minX,WORLD-100),
+      y:clamp(M.ch.y+(Math.random()*2-1)*420,100,WORLD-100)});};
+    for(let i=0;i<n;i++){
+      const t=pool[(Math.random()*Math.min(pool.length,2+M.wave))|0];
+      let x,y,tries=0;
+      do{x=minX+Math.random()*(WORLD-minX-200);y=200+Math.random()*(WORLD-400);tries++;}
+      while(tries<40&&dist(x,y,M.ch.x,M.ch.y)<700);
+      const e=makeEnemy(t,x,y,d.hp*(1+M.wave*0.06));
+      if(t==='heli')e.z=52;
+      M.enemies.push(e);
+    }
+    drop('fuel'); drop('ammo');
+    if(M.wave%3===0)drop('armor');
+    say("Wave "+M.wave+" inbound, Paul!"); sfx('warn');
+    M.phaseBanner={t:0,name:'WAVE '+M.wave};
+  }
 }
 function drawBench(){
   const t=stTime;
@@ -4099,8 +4217,15 @@ function menuItems(){
   items.push({id:'password',label:'ENTER PASSWORD'});
   /* a veteran's privilege: one click back into any theater */
   if(!window.__vet)try{window.__vet=window.__vic||getScores().length>0;}catch(e){}
-  if(window.__vet)items.push({id:'replay',label:'REPLAY THEATER: '+CAMP_NAMES[replayIdx]});
+  if(window.__vet){
+    const meds=loadJSON('pauls-strike-medals')||{};
+    const mch={g:'  ★ GOLD',s:'  ✦ SILVER',b:'  ○ BRONZE'}[meds[replayIdx]]||'';
+    items.push({id:'replay',label:'REPLAY THEATER: '+CAMP_NAMES[replayIdx]+mch});
+    items.push({id:'last',label:'LAST STAND: '+['DESERT','JUNGLE','CITY','ARCTIC'][lastIdx]+' — SURVIVE THE WAVES'});
+    items.push({id:'specop',label:'SPECIAL OP: BLACK GOLD — THE OIL FIELD'});
+  }
   items.push({id:'mode',label:'CREW: '+(settings.coop?'TWO-PLAYER (PILOT + GUNNER)':'SOLO PILOT')});
+  items.push({id:'fctl',label:'FLIGHT CONTROLS: '+(settings.classic?'CLASSIC ROTATE (LIKE THE ORIGINAL)':'MODERN (PUSH TO FLY)')});
   items.push({id:'diff',label:'DIFFICULTY: '+DIFF[settings.diff].label});
   items.push({id:'crt',label:'CRT FILTER: '+(settings.crt?'ON':'OFF')});
   items.push({id:'mmusic',label:'MISSION MUSIC: '+(settings.mmusic?'ON':'OFF (AUTHENTIC)')});
@@ -4152,6 +4277,8 @@ function drawMenu(){
   if((input.left||input.right)&&it.id==='diff')cycleDiff(input.left?-1:1);
   if((input.left||input.right)&&it.id==='mode'){settings.coop=!settings.coop;saveSettings();sfx('select');}
   if((input.left||input.right)&&it.id==='replay'){replayIdx=(replayIdx+(input.left?-1:1)+CAMP_NAMES.length)%CAMP_NAMES.length;sfx('select');}
+  if((input.left||input.right)&&it.id==='last'){lastIdx=(lastIdx+(input.left?-1:1)+4)%4;sfx('select');}
+  if((input.left||input.right)&&it.id==='fctl'){settings.classic=!settings.classic;saveSettings();sfx('select');}
   if(input.confirm){
     sfx('confirm');
     if(it.id==='new'){newSession(0);state='chief';chiefIdx=(G&&G.cp)||0;stTime=0;}
@@ -4162,6 +4289,12 @@ function drawMenu(){
         totShots:s.totShots||0,totHits:s.totHits||0,totDist:s.totDist||0,wUse:s.wUse||{}};
         settings.diff=s.diff; enterBriefing();}
     }
+    else if(it.id==='last'){startLastStand(lastIdx);}
+    else if(it.id==='specop'){
+      newSession(0); G.mi=12;
+      G.perks.armor=15; G.perks.winchM=0.8; G.perks.cap=1; G.perks.gun=150; G.perks.hydra=8; G.perks.hf=2;
+      state='chief'; chiefIdx=(G&&G.cp)||0; stTime=0;
+    }
     else if(it.id==='replay'){
       newSession(replayIdx*3);
       if(replayIdx>=1)G.perks.armor=15;                    /* the upgrades he earned come with him */
@@ -4170,6 +4303,7 @@ function drawMenu(){
     }
     else if(it.id==='password'){state='password';pwBuf='';pwMsg='';stTime=0;}
     else if(it.id==='mode'){settings.coop=!settings.coop;saveSettings();}
+    else if(it.id==='fctl'){settings.classic=!settings.classic;saveSettings();}
     else if(it.id==='diff')cycleDiff(1);
     else if(it.id==='crt'){settings.crt=!settings.crt;saveSettings();applyCrt();}
     else if(it.id==='mmusic'){settings.mmusic=!settings.mmusic;saveSettings();}
@@ -4241,6 +4375,7 @@ function drawControls(){
   textShadow(x+40,y+344,'ANY TIME',13,'#7fd77f');
   textShadow(x+56,y+370,'P PAUSE · C CRT FILTER · M SOUND',12,'#ddd');
   textShadow(x+56,y+390,'GAMEPAD RUMBLE: automatic — hits, explosions, winch & missile launches',11,'#8a8f98');
+  textShadow(x+56,y+408,'FLIGHT CONTROLS in menu: MODERN (push to fly) or CLASSIC ROTATE (pivot + thrust)',11,'#8a8f98');
   textShadow(W/2,y+420,'PRESS ENTER TO GO BACK',13,'#aaa','center');
   if(input.confirm||input.back){state='menu';sfx('select');}
 }
@@ -4497,6 +4632,12 @@ function drawBriefing(){
   }
   textShadow(mx+mm/2,my+mm+8,'TACTICAL MAP — STRIKE ZONES',10,'#888','center');
   /* the whole level's battle plan, like the original's map walkthrough */
+  if(def.camp===4){
+    textShadow(x+400,y+230,'BATTLE PLAN — SPECIAL OPERATION',12,'#8a8f98');
+    textShadow(x+400,y+254,'▸ SINGLE SORTIE — OFF THE BOOKS',12,'#ffd75e');
+    textShadow(x+400,y+276,'· NO REINFORCEMENTS · NO FOLLOW-UP TASKING',12,'#777');
+    textShadow(x+400,y+324,'FINISH THE JOB AND BRING HER HOME — THIS ONE NEVER HAPPENED',10,'#6a6f78');
+  } else {
   const campStart=Math.floor(G.mi/3)*3;
   textShadow(x+400,y+230,'BATTLE PLAN — THIS THEATER',12,'#8a8f98');
   for(let ph=0;ph<3;ph++){
@@ -4505,6 +4646,7 @@ function drawBriefing(){
     textShadow(x+400,y+254+ph*22,(done?'✓ ':(cur?'▸ ':'· '))+'PHASE '+(ph+1)+' — '+MISSIONS[pmi].name+(cur?'':(done?'':'  (TASKING TO FOLLOW)')),12,col);
   }
   textShadow(x+400,y+324,'OBJECTIVES CHAIN IN FLIGHT — THE MAP IS YOURS UNTIL THE THEATER IS CLEAR',10,'#6a6f78');
+  }
   /* legend beside the map */
   const lx=x+400;
   textShadow(lx,y+100,'LEGEND',12,'#8a8f98');
@@ -4557,6 +4699,10 @@ function drawDebrief(){
       textShadow(x+450,y+104+i*26,String(r[1]),14,'#fff','right');
     });
   }
+  if(M.medalGot){
+    const mName={g:'★ GOLD WINGS',s:'✦ SILVER WINGS',b:'○ BRONZE WINGS'}[M.medalGot];
+    textShadow(W/2,y+232,mName+(M.medalNew?'  —  NEW BEST':''),14,M.medalGot==='g'?'#ffd75e':(M.medalGot==='s'?'#c8d0dc':'#c89058'),'center');
+  }
   const pw=G.mi+1<MISSIONS.length?PASSWORDS[G.diff][G.mi+1]:null;
   if(pw){
     ctx.strokeStyle='#3a6a3a'; ctx.strokeRect(x+90,y+248,340,44);
@@ -4567,7 +4713,12 @@ function drawDebrief(){
   if(input.confirm){
     sfx('confirm');
     G.mi++;
-    if(G.mi>=MISSIONS.length){clearSave();rankNext='victory';state='rank';stTime=0;setTheme('win');}
+    if(M.specialOp){ /* one sortie, no follow-up — straight to the Hall */
+      clearSave(); afterScores='title'; stTime=0;
+      if(scoreQualifies(G.score)){initialsBuf='';state='initials';}
+      else{state='title';setTheme('title');}
+    }
+    else if(G.mi>=12){clearSave();rankNext='victory';state='rank';stTime=0;setTheme('win');}
     else{
       saveProgress();
       if(CAMP_INTROS[G.mi]){rankNext='campintro';state='rank';stTime=0;setTheme('win');}
