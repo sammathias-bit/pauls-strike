@@ -3848,7 +3848,7 @@ function drawGame(){
 
 /* ---------------- screens ---------------- */
 let state='title',stTime=0;
-let menuIdx=0,pauseIdx=0,briefT=0,chiefIdx=0,pwBuf='',pwMsg='';
+let menuIdx=0,pauseIdx=0,briefT=0,chiefIdx=0,pwBuf='',pwMsg='',replayIdx=0;
 function centerPanel(w2,h2){
   const x=(W-w2)/2,y=(H-h2)/2;
   ctx.fillStyle='rgba(0,0,0,0.78)'; ctx.fillRect(x,y,w2,h2);
@@ -4097,6 +4097,9 @@ function menuItems(){
   const items=[{id:'new',label:'NEW CAMPAIGN'}];
   if(save)items.push({id:'continue',label:'CONTINUE — MISSION '+(save.mi+1)+' ('+DIFF[save.diff].label+')'});
   items.push({id:'password',label:'ENTER PASSWORD'});
+  /* a veteran's privilege: one click back into any theater */
+  if(!window.__vet)try{window.__vet=window.__vic||getScores().length>0;}catch(e){}
+  if(window.__vet)items.push({id:'replay',label:'REPLAY THEATER: '+CAMP_NAMES[replayIdx]});
   items.push({id:'mode',label:'CREW: '+(settings.coop?'TWO-PLAYER (PILOT + GUNNER)':'SOLO PILOT')});
   items.push({id:'diff',label:'DIFFICULTY: '+DIFF[settings.diff].label});
   items.push({id:'crt',label:'CRT FILTER: '+(settings.crt?'ON':'OFF')});
@@ -4148,6 +4151,7 @@ function drawMenu(){
   };
   if((input.left||input.right)&&it.id==='diff')cycleDiff(input.left?-1:1);
   if((input.left||input.right)&&it.id==='mode'){settings.coop=!settings.coop;saveSettings();sfx('select');}
+  if((input.left||input.right)&&it.id==='replay'){replayIdx=(replayIdx+(input.left?-1:1)+CAMP_NAMES.length)%CAMP_NAMES.length;sfx('select');}
   if(input.confirm){
     sfx('confirm');
     if(it.id==='new'){newSession(0);state='chief';chiefIdx=(G&&G.cp)||0;stTime=0;}
@@ -4157,6 +4161,12 @@ function drawMenu(){
         totalKills:s.totalKills||0,totalRescues:s.totalRescues||0,cp:s.cp||0,perks:s.perks||basePerks(),chk:s.chk||null,
         totShots:s.totShots||0,totHits:s.totHits||0,totDist:s.totDist||0,wUse:s.wUse||{}};
         settings.diff=s.diff; enterBriefing();}
+    }
+    else if(it.id==='replay'){
+      newSession(replayIdx*3);
+      if(replayIdx>=1)G.perks.armor=15;                    /* the upgrades he earned come with him */
+      if(replayIdx>=2){G.perks.winchM=0.8;G.perks.cap=1;G.perks.gun=150;G.perks.hydra=8;G.perks.hf=2;}
+      state='chief';chiefIdx=(G&&G.cp)||0;stTime=0;
     }
     else if(it.id==='password'){state='password';pwBuf='';pwMsg='';stTime=0;}
     else if(it.id==='mode'){settings.coop=!settings.coop;saveSettings();}
