@@ -340,6 +340,7 @@ function pollInput(){
   input.resupply=jp('KeyR')||gjp[3];
   input.strafe=!!(keys.ShiftLeft||gbtn[4]);
   input.pause=jp('KeyP')||jp('Escape')||gjp[9];
+  input.dpad=[gjp[12]||false,gjp[13]||false,gjp[14]||false,gjp[15]||false];
   input.up=jp('ArrowUp')||jp('KeyW')||gjp[12]||false;
   input.down=jp('ArrowDown')||jp('KeyS')||gjp[13]||false;
   input.left=jp('ArrowLeft')||jp('KeyA')||gjp[14]||false;
@@ -3832,9 +3833,11 @@ function drawTitle(){
   textShadow(W/2,H-72,'WASD/ARROWS FLY · SPACE FIRE · Q WEAPON · E WINCH/LAND · P PAUSE',12,'#d8b890','center');
   textShadow(W/2,H-50,'2-PLAYER CO-OP & PASSWORDS IN MENU · C CRT · M SOUND · GAMEPAD OK',12,'#d8b890','center');
   if(AU.theme!=='title')setTheme('title');
-  /* the quiet code: ↑ ↑ ↓ ↓ ← →  */
+  /* the quiet code: ↑ ↑ ↓ ↓ ← →  — keyboard arrows or gamepad d-pad */
   const CODE=['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight'];
-  for(const code of pressed){
+  const codeEvts=[...pressed];
+  if(input.dpad)['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].forEach((c,i)=>{if(input.dpad[i])codeEvts.push(c);});
+  for(const code of codeEvts){
     if(code.startsWith('Arrow')){
       stTime=Math.min(stTime,10); /* arrows hold off the demo */
       window.__tc=window.__tc||[];
