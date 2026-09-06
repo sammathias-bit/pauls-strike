@@ -4779,6 +4779,7 @@ function frame(now){
 }
 function tick(){lastTick=performance.now();try{frame(lastTick);}catch(e){console.error(e);}}
 try{window.__vic=!!localStorage.getItem('pauls-strike-victory');}catch(e){}
+addEventListener('hashchange',()=>{try{location.reload();}catch(e){}});
 /* direct doors: #bench opens the special delivery, #lights the aurora flight */
 try{
   if(/[?#]bench/i.test(location.href))startSecret();
